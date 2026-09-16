@@ -5,8 +5,10 @@ import PackageDescription
 let package = Package(
     name: "Spike",
     platforms: [.macOS("26.0")],
+    dependencies: [.package(path: "..")],
     targets: [
         .executableTarget(name: "probe"),
-        .executableTarget(name: "latency"),
+        .executableTarget(name: "prepare"),
+        .executableTarget(name: "latency", dependencies: [.product(name: "BilbyCore", package: "Bilby")]),
     ]
 )

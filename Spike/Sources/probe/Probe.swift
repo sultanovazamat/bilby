@@ -78,6 +78,17 @@ struct Probe {
             }
         }
 
+        log("  -- prepareTranslation() from a plain process --")
+        let preparing = ContinuousClock.now
+        do {
+            try await session.prepareTranslation()
+            log("  ✓ prepared in \(ContinuousClock.now - preparing)")
+            let retry = try await session.translate("the runway is tighter than we thought")
+            log("  ✓ retry: \(retry.targetText)")
+        } catch {
+            log("  ✗ after \(ContinuousClock.now - preparing): \(error)")
+        }
+
         log("\n=== 3b. Which pairs are already installed? ===")
         let availability = LanguageAvailability()
         for code in ["ru", "uk", "pl", "tr", "de", "fr", "es", "ar", "hi"] {

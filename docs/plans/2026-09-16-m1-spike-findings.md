@@ -144,3 +144,71 @@ Found before a single line of UI existed. This is what the spike was for.
 - **Translation latency is still unmeasured** — no language pack is installed,
   and installing one needs the SwiftUI download path. The 2.5 s criterion is
   not yet proven end to end.
+
+---
+
+# Translation — measured, and the latency question is settled
+
+Language pair installed through the SwiftUI path inside a real `.app`.
+Source: `Spike/Sources/prepare/Prepare.swift`.
+
+## Latency
+
+```
+prepared in 179 s          ← one-time download
+0.706 s   (first call, warm-up)
+0.109 s
+0.067 s
+median 0.109 s
+```
+
+**End to end: 0.32 s transcription + 0.11 s translation ≈ 0.43 s median.**
+
+Acceptance criterion 1 wanted under 2.5 s. We are inside it by roughly 5×.
+**Risk 1 is retired: Bilby is a caption bar, not a transcript viewer.**
+
+## What installing actually requires
+
+Three things had to be true at once, and each was discovered by failing:
+
+1. **A real `.app` bundle.** A SwiftUI executable without one is treated as a
+   background process — no window ever appears and `.translationTask` never
+   fires. `Spike/Scripts/make-app.sh` builds the minimal bundle.
+2. **The SwiftUI `.translationTask` path.** From a plain process
+   `prepareTranslation()` fails in 11 ms with `.notInstalled` and downloads
+   nothing.
+3. **Both sides of the pair.** The system dialog downloaded English (US) *and*
+   Russian, even though English speech recognition was already installed.
+
+What the user downloads in System Settings does not satisfy the framework:
+those assets are tagged `SAFBundleIdentifier = com.apple.Translate`.
+
+**The download UI is Apple's**, presented by the system and not stylable. Our
+onboarding can only trigger it and frame it. It took **3 minutes**, so the app
+must stay usable while it runs rather than blocking on a progress bar.
+
+## The quality finding — this is the important one
+
+```
+"circle back on the runway"  →  "вернемся на взлетно-посадочную полосу"
+"the runway is tighter"      →  "взлетно-посадочная полоса плотнее"
+```
+
+**Runway became an airport runway.** Apple's NMT translates a clause in
+isolation, so financial jargon collapses into its literal sense — and it does
+so in precisely the meetings where the captions were needed.
+
+This was the predicted failure mode, now confirmed on the first real sentence
+tried. It means:
+
+- The fast line will be **fast and sometimes wrong**, and wrong in a way the
+  reader cannot detect.
+- **"Explain with context" is not a bonus feature. It is the product.** It is
+  the only thing that repairs this, and it is what no open-source caption bar
+  has.
+- It must be tested against Apple Intelligence, which is **switched off** on
+  the development machine. That is now a blocking dependency for M5, not a
+  nice-to-have.
+
+`TranslationSession` is also **non-Sendable**, so the translator adapter must
+own it inside a single isolation domain rather than pass it around.
