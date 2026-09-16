@@ -36,8 +36,11 @@ public final class SystemAudioTap: @unchecked Sendable {
             }
     }
 
-    /// Streams what the given processes are playing. An empty list taps
-    /// everything on the machine.
+    /// Streams what the given processes are playing.
+    ///
+    /// The list must not be empty: an empty process list taps *nothing*, not
+    /// everything. A global tap is a different initializer and needs a
+    /// permission an unbundled process cannot hold.
     public func buffers(of processes: [AudioObjectID]) -> AsyncStream<AVAudioPCMBuffer> {
         AsyncStream { continuation in
             var tap = AudioObjectID(kAudioObjectUnknown)
@@ -61,21 +64,35 @@ public final class SystemAudioTap: @unchecked Sendable {
                 return
             }
 
+            // @Sendable is load-bearing. Without it the closure inherits the
+            // isolation of wherever it was created, and the Swift runtime
+            // asserts that isolation on Core Audio's realtime thread — which
+            // traps the process the moment audio starts flowing.
             let status = AudioDeviceCreateIOProcIDWithBlock(&proc, aggregate, nil) {
-                _, input, _, _, _ in
-                guard let buffer = AVAudioPCMBuffer(
-                    pcmFormat: format, bufferListNoCopy: input
-                ) else { return }
-                // Copy: the list is owned by Core Audio and reused immediately.
+                @Sendable _, input, _, _, _ in
                 guard let copy = AVAudioPCMBuffer(
-                    pcmFormat: format, frameCapacity: buffer.frameLength
+                    pcmFormat: format, frameCapacity: 4096
                 ) else { return }
-                copy.frameLength = buffer.frameLength
-                for channel in 0..<Int(format.channelCount) {
-                    guard let from = buffer.floatChannelData?[channel],
-                          let into = copy.floatChannelData?[channel] else { continue }
-                    into.update(from: from, count: Int(buffer.frameLength))
+
+                // Core Audio reuses its list immediately, so copy the bytes.
+                // memcpy rather than per-channel: the tap hands over
+                // interleaved stereo, where floatChannelData has one buffer.
+                let incoming = UnsafeMutableAudioBufferListPointer(
+                    UnsafeMutablePointer(mutating: input)
+                )
+                let outgoing = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+                var frames = 0
+                for index in 0..<min(incoming.count, outgoing.count) {
+                    guard let from = incoming[index].mData,
+                          let into = outgoing[index].mData else { continue }
+                    let bytes = min(Int(incoming[index].mDataByteSize),
+                                    Int(outgoing[index].mDataByteSize))
+                    memcpy(into, from, bytes)
+                    outgoing[index].mDataByteSize = UInt32(bytes)
+                    frames = max(frames, bytes / Int(format.streamDescription.pointee.mBytesPerFrame))
                 }
+                copy.frameLength = AVAudioFrameCount(frames)
+                guard frames > 0 else { return }
                 continuation.yield(copy)
             }
             guard status == noErr, let proc, AudioDeviceStart(aggregate, proc) == noErr else {

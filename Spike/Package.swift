@@ -9,6 +9,7 @@ let package = Package(
     targets: [
         .executableTarget(name: "probe"),
         .executableTarget(name: "prepare"),
+        .executableTarget(name: "taptest"),
         .executableTarget(name: "latency", dependencies: [.product(name: "BilbyCore", package: "Bilby")]),
     ]
 )
