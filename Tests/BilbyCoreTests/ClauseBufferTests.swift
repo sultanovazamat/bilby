@@ -4,6 +4,14 @@ import Testing
 @Suite("ClauseBuffer")
 struct ClauseBufferTests {
 
+    /// The safety-net cut is a last resort in production, so tests that are
+    /// about it say so explicitly rather than riding on the default.
+    private static var shortPolicy: ClauseBuffer.Policy {
+        var policy = ClauseBuffer.Policy()
+        policy.maxWords = 12
+        return policy
+    }
+
     /// `#expect` cannot call mutating members, so tests feed the buffer first.
     private func clauses(_ texts: [Utterance], policy: ClauseBuffer.Policy = .init()) -> [[String]] {
         var buffer = ClauseBuffer(policy: policy)
@@ -44,7 +52,7 @@ struct ClauseBufferTests {
     @Test("a long clause is cut at a comma rather than left hanging")
     func cutsLongClauseAtSoftBreak() {
         let text = "one two three four five six seven eight nine ten, eleven twelve"
-        #expect(clauses([Utterance(text)])
+        #expect(clauses([Utterance(text)], policy: Self.shortPolicy)
                 == [["one two three four five six seven eight nine ten,"]])
     }
 
@@ -55,7 +63,7 @@ struct ClauseBufferTests {
     func cutsSpeechWithoutPunctuation() {
         let text = "so i just thought it would be really fun to go and try to build "
             + "this even if it did not work out"
-        let got = clauses([Utterance(text)])
+        let got = clauses([Utterance(text)], policy: Self.shortPolicy)
         #expect(got.first?.count == 1)
         #expect(got.first?.first?.split(whereSeparator: \.isWhitespace).count == 12)
     }

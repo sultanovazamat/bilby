@@ -11,8 +11,11 @@ public struct ClauseBuffer: Sendable {
         public var terminators: Set<Character> = [".", "!", "?", "…"]
         /// Cut here only once the clause is already long.
         public var softBreaks: Set<Character> = [",", ";", ":", "—"]
-        /// Word count above which a soft break becomes a cut.
-        public var maxWords: Int = 12
+        /// Last-resort cut for speech that never pauses. Boundaries should
+        /// come from the speaker stopping, not from a counter — cutting every
+        /// twelve words split "it wasn't" from "really that risky" and put the
+        /// opposite meaning on screen.
+        public var maxWords: Int = 25
 
         public init() {}
     }
