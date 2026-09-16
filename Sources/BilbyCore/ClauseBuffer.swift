@@ -53,15 +53,37 @@ public struct ClauseBuffer: Sendable {
         if utterance.isFinal {
             clauses.append(Clause(text: rest.trimmed, at: utterance.at))
             shown = ""
-        } else if rest.wordCount >= policy.maxWords,
-                  let cut = rest.lastIndex(where: { policy.softBreaks.contains($0) }) {
-            clauses.append(take(&rest, through: cut, at: utterance.at))
+        } else if rest.wordCount >= policy.maxWords {
+            // Prefer a comma, but cut regardless: Parakeet emits no punctuation
+            // at all, and waiting for a full stop that never comes let a single
+            // "unfinished sentence" grow to the length of a whole monologue.
+            let cut = rest.lastIndex(where: { policy.softBreaks.contains($0) })
+                ?? boundary(in: rest, afterWords: policy.maxWords)
+            if let cut { clauses.append(take(&rest, through: cut, at: utterance.at)) }
         }
 
         pending = rest.trimmed
 
         // A lone "." is a clause by the rules above and nonsense on screen.
         return clauses.filter { $0.text.contains(where: \.isLetter) }
+    }
+
+    /// The end of the nth word, so a cut lands between words rather than
+    /// inside one.
+    private func boundary(in text: Substring, afterWords count: Int) -> Substring.Index? {
+        var words = 0
+        var index = text.startIndex
+        var inWord = false
+        while index < text.endIndex {
+            if text[index].isWhitespace {
+                if inWord { words += 1; if words >= count { return index } }
+                inWord = false
+            } else {
+                inWord = true
+            }
+            index = text.index(after: index)
+        }
+        return nil
     }
 
     private mutating func take(

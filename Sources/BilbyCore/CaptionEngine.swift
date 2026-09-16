@@ -14,9 +14,13 @@ public struct CaptionEngine: Sendable {
     public var nextPending: Line? { transcript.nextPending }
 
     /// The sentence still being spoken, if it is worth translating yet.
+    ///
+    /// Capped: a draft is a glance at what is being said now, and translating
+    /// more than a line of it costs time the reader does not have.
     public var draftable: String? {
-        let text = buffer.pending
-        return text.wordCount >= 3 ? text : nil
+        let words = buffer.pending.split(whereSeparator: \.isWhitespace)
+        guard words.count >= 3 else { return nil }
+        return words.suffix(20).joined(separator: " ")
     }
 
     public mutating func consume(_ utterance: Utterance) -> [CaptionEvent] {

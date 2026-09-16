@@ -38,15 +38,21 @@ public struct ParakeetTranscriber: AudioTranscribing {
                     return
                 }
 
-                // Partials are the live line; EOU closes the caption. This is
-                // what replaces ClauseBuffer's punctuation guessing.
+                // Parakeet reports the whole session transcript every time, so
+                // the adapter subtracts what has already been closed. Without
+                // this the core sees an ever-growing utterance and ends up
+                // retranslating the entire monologue several times a second.
+                let spoken = Transcript()
+
                 await manager.setPartialCallback { text in
-                    guard !text.isEmpty else { return }
-                    continuation.yield(Utterance(text, isFinal: false, at: clock.position))
+                    let tail = spoken.tail(of: text)
+                    guard !tail.isEmpty else { return }
+                    continuation.yield(Utterance(tail, isFinal: false, at: clock.position))
                 }
                 await manager.setEouCallback { text in
-                    guard !text.isEmpty else { return }
-                    continuation.yield(Utterance(text, isFinal: true, at: clock.position))
+                    let tail = spoken.close(text)
+                    guard !tail.isEmpty else { return }
+                    continuation.yield(Utterance(tail, isFinal: true, at: clock.position))
                 }
 
                 for await buffer in source() {
@@ -60,5 +66,28 @@ public struct ParakeetTranscriber: AudioTranscribing {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+}
+
+
+/// Remembers how much of Parakeet's cumulative transcript is already closed.
+private final class Transcript: @unchecked Sendable {
+    private let lock = NSLock()
+    private var closed = ""
+
+    /// What has been said since the last end of utterance.
+    func tail(of whole: String) -> String {
+        lock.lock(); defer { lock.unlock() }
+        return String(whole.dropFirst(min(closed.count, whole.count)))
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Closes the current utterance and returns it.
+    func close(_ whole: String) -> String {
+        lock.lock(); defer { lock.unlock() }
+        let tail = String(whole.dropFirst(min(closed.count, whole.count)))
+            .trimmingCharacters(in: .whitespaces)
+        closed = whole
+        return tail
     }
 }

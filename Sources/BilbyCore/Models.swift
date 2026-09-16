@@ -59,6 +59,7 @@ public enum CaptionEvent: Equatable, Sendable {
 }
 
 extension StringProtocol {
+    public var words: [SubSequence] { split(whereSeparator: \.isWhitespace) }
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
     var wordCount: Int { split(whereSeparator: \.isWhitespace).count }
 }

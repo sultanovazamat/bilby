@@ -48,6 +48,18 @@ struct ClauseBufferTests {
                 == [["one two three four five six seven eight nine ten,"]])
     }
 
+    /// Parakeet emits no punctuation at all. Waiting for a full stop that never
+    /// arrives let one "unfinished sentence" grow to the length of a monologue,
+    /// which was then retranslated several times a second.
+    @Test("unpunctuated speech is still cut into lines")
+    func cutsSpeechWithoutPunctuation() {
+        let text = "so i just thought it would be really fun to go and try to build "
+            + "this even if it did not work out"
+        let got = clauses([Utterance(text)])
+        #expect(got.first?.count == 1)
+        #expect(got.first?.first?.split(whereSeparator: \.isWhitespace).count == 12)
+    }
+
     @Test("a short clause is never cut at a comma")
     func keepsShortClauseWhole() {
         #expect(clauses([Utterance("well, maybe")]) == [[]])
