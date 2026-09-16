@@ -59,12 +59,13 @@ struct BilbyApp: App {
 }
 
 enum Engine: String, CaseIterable, Sendable {
-    case apple, parakeet
+    case apple, parakeet, unified
 
     var name: String {
         switch self {
-        case .apple: "Apple (bursts every 3.6s)"
-        case .parakeet: "Parakeet EOU (160ms)"
+        case .apple: "Apple — 3.6s bursts, punctuated"
+        case .parakeet: "Parakeet EOU — 160ms, no punctuation"
+        case .unified: "Parakeet Unified — ~1s, punctuated"
         }
     }
 }
@@ -72,7 +73,7 @@ enum Engine: String, CaseIterable, Sendable {
 @MainActor
 @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private(set) var engine: Engine = .parakeet
+    private(set) var engine: Engine = .unified
     private(set) var isListening = false
     private(set) var isHidden = false
     private(set) var sources: [AudioProcess] = []
@@ -175,6 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let transcriber: any AudioTranscribing = switch chosen {
             case .apple: AppleTranscriber(onAudio: { counter.audio($0) })
             case .parakeet: ParakeetTranscriber(onAudio: { counter.audio($0) })
+            case .unified: UnifiedTranscriber(onAudio: { counter.audio($0) })
             }
             let utterances = transcriber.utterances(from: audio)
             var firstWords: String?

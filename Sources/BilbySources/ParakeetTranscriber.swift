@@ -49,7 +49,7 @@ public struct ParakeetTranscriber: AudioTranscribing {
                 // the adapter subtracts what has already been closed. Without
                 // this the core sees an ever-growing utterance and ends up
                 // retranslating the entire monologue several times a second.
-                let spoken = Transcript()
+                let spoken = RunningTranscript()
                 let pause = self.pause
 
                 await manager.setPartialCallback { text in
@@ -85,45 +85,3 @@ public struct ParakeetTranscriber: AudioTranscribing {
 }
 
 
-/// Remembers how much of Parakeet's cumulative transcript is already closed,
-/// and notices when the speaker stopped.
-private final class Transcript: @unchecked Sendable {
-    private let lock = NSLock()
-    private var closed = ""
-    private var latest = ""
-    private var changedAt = ContinuousClock.now
-
-    /// Takes the model's running transcript and reports what is new, plus the
-    /// thought that a pause has just ended, if any.
-    func observe(_ whole: String, pause: Duration) -> (finished: String?, tail: String) {
-        lock.lock(); defer { lock.unlock() }
-
-        var finished: String?
-        if whole != latest {
-            let previous = String(latest.dropFirst(min(closed.count, latest.count)))
-                .trimmingCharacters(in: .whitespaces)
-            // Four words: shorter fragments are rarely a whole thought, and a
-            // stray "yeah" on its own line reads as noise.
-            if ContinuousClock.now - changedAt >= pause,
-               previous.split(whereSeparator: \.isWhitespace).count >= 4 {
-                finished = previous
-                closed = latest
-            }
-            latest = whole
-            changedAt = ContinuousClock.now
-        }
-
-        let tail = String(whole.dropFirst(min(closed.count, whole.count)))
-            .trimmingCharacters(in: .whitespaces)
-        return (finished, tail)
-    }
-
-    /// Closes the current utterance and returns it.
-    func close(_ whole: String) -> String {
-        lock.lock(); defer { lock.unlock() }
-        let tail = String(whole.dropFirst(min(closed.count, whole.count)))
-            .trimmingCharacters(in: .whitespaces)
-        closed = whole
-        return tail
-    }
-}

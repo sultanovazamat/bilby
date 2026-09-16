@@ -56,3 +56,44 @@ No punctuation, and we now know that costs us nothing.
 
 Apple stays available in the menu so the comparison can be repeated rather
 than argued about.
+
+---
+
+# Revision, 2026-09-17: punctuation is required after all
+
+The conclusion above — that punctuation buys us nothing — was right about what
+it measured and wrong about what mattered.
+
+That test compared punctuated and unpunctuated **whole clauses**. It never
+asked where a clause comes from. Without punctuation the engine gives no
+sentence boundary, so Bilby had to invent one, and every invention failed:
+
+| Guess | Result |
+|---|---|
+| Cut on a full stop | Parakeet EOU emits none |
+| Cut every 12 words | "it wasn't" / "really that risky" — the screen said the opposite |
+| Cut on a 450 ms pause | better, but a pause is not a sentence |
+| Wait for `<EOU>` | fired once in ninety seconds of monologue |
+
+Apple's translator is good on whole sentences and bad on fragments: given
+"i knew that i could / do it again" it produced «Сделай это снова», an
+imperative. Measured separately, Apple also beat Opus-MT (77M) on our own
+transcript, so the translator is not the weak link — **the cut is.**
+
+**Punctuation is not wanted as formatting. It is the only trustworthy sentence
+boundary**, and it has to come from the model that heard the speech.
+
+## Requirement
+
+Punctuation and capitalisation from the recogniser. **English-only source is
+acceptable** — the case is an English meeting read in Russian, so the 25
+languages EOU offered were never the point.
+
+## Current answer
+
+**Parakeet Unified 0.6B** — 596 MB, streaming, punctuated, English.
+About a second of latency against EOU's 160 ms. Downloaded and wired as a
+third engine so the three can be compared on the same call.
+
+If a second proves too slow, the two-tier shape already in the code takes EOU
+for the live line and Unified for the settled one.
