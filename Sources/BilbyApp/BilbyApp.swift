@@ -10,18 +10,33 @@ struct BilbyApp: App {
 
     var body: some Scene {
         MenuBarExtra("Bilby", systemImage: "captions.bubble") {
-            Button("Play test audio") { delegate.playTestAudio() }
+            // The panel is click-through, so every control lives here.
+            Button(delegate.isHidden ? "Show captions" : "Hide captions") {
+                delegate.toggleCaptions()
+            }
+            .keyboardShortcut("c", modifiers: [.option, .command])
+
             Divider()
-            Button("Quit") { NSApplication.shared.terminate(nil) }
+
+            Button("Play test audio") { delegate.playTestAudio() }
+            Button("Stop") { delegate.stop() }
+
+            Divider()
+
+            Button("Quit Bilby") { NSApplication.shared.terminate(nil) }
+                .keyboardShortcut("q")
         }
     }
 }
 
 @MainActor
+@Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let model = CaptionModel()
-    private var panel: CaptionPanel?
-    private var running: Task<Void, Never>?
+    private(set) var isHidden = false
+
+    @ObservationIgnored private let model = CaptionModel()
+    @ObservationIgnored private var panel: CaptionPanel?
+    @ObservationIgnored private var running: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let panel = CaptionPanel(content: CaptionBar(model: model))
@@ -30,19 +45,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.panel = panel
     }
 
+    func toggleCaptions() {
+        isHidden.toggle()
+        if isHidden { panel?.orderOut(nil) } else { panel?.orderFrontRegardless() }
+    }
+
+    func stop() {
+        running?.cancel()
+        running = nil
+        model.clear()
+    }
+
     /// Everything the live tap will do, minus the tap.
     func playTestAudio() {
-        running?.cancel()
+        stop()
         running = Task {
             let file = AudioFileSource(url: URL(filePath: "/tmp/meeting.aiff"))
             let utterances = AppleTranscriber().utterances(from: { file.buffers() })
-            let session = CaptionSession(
-                translator: AppleTranslator(),
-                target: Language("ru")
-            )
+            let session = CaptionSession(translator: AppleTranslator(), target: Language("ru"))
             for await event in session.events(from: utterances) {
                 model.apply(event)
-                panel?.placeAtBottom()
+                panel?.fitContent()
             }
         }
     }

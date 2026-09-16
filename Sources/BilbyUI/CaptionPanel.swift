@@ -29,13 +29,23 @@ public final class CaptionPanel: NSPanel {
         contentView = hosting
     }
 
-    /// Bottom centre of the screen the mouse is on, like subtitles.
+    /// Bottom centre, like subtitles everywhere: shortest path for the eye
+    /// between the speaker and the text. A corner would add a diagonal journey
+    /// to every sentence, and the top right belongs to notifications anyway.
     public func placeAtBottom(inset: CGFloat = 90) {
         guard let screen = NSScreen.main else { return }
-        let size = frame.size
         setFrameOrigin(NSPoint(
-            x: screen.visibleFrame.midX - size.width / 2,
+            x: screen.visibleFrame.midX - frame.width / 2,
             y: screen.visibleFrame.minY + inset
         ))
+    }
+
+    /// Grows and shrinks with the text while staying centred.
+    public func fitContent(inset: CGFloat = 90) {
+        guard let hosting = contentView else { return }
+        let height = max(hosting.fittingSize.height, 1)
+        guard abs(height - frame.height) > 0.5 else { return }
+        setContentSize(NSSize(width: frame.width, height: height))
+        placeAtBottom(inset: inset)
     }
 }

@@ -10,7 +10,17 @@ public final class CaptionModel {
     /// Committed lines, oldest first. A line is never rewritten.
     public private(set) var lines: [Line] = []
 
+    /// Hidden by the menu bar. The panel stays alive so captions keep flowing
+    /// underneath — reappearing is instant rather than a cold start.
+    public var isHidden = false
+
     public init() {}
+
+    /// Clears the bar when a session ends, so stale text does not linger.
+    public func clear() {
+        live = ""
+        lines = []
+    }
 
     public var latest: Line? { lines.last }
 
