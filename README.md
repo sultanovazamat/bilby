@@ -42,6 +42,6 @@ swift test                     # 20 tests, no hardware required
 ## Status
 
 M0 complete: core, tests, purity gate.
-M1 next — the spike that decides whether this product exists:
-measure end-to-end latency, confirm `TranslationSession` works outside a
-SwiftUI view, and read the real `supportedLocales` lists.
+M1 in progress — see `docs/plans/2026-09-16-m1-spike-findings.md`.
+Settled: language coverage (9 source, 22 target), `TranslationSession` works
+outside SwiftUI, no app bundle needed. Open: end-to-end latency.
