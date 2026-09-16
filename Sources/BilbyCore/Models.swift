@@ -36,6 +36,14 @@ public struct Line: Equatable, Sendable, Identifiable {
     public let at: Duration
 }
 
+extension Line {
+    /// A copy carrying its translation, for presentation. `Transcript` still
+    /// refuses to translate the same line twice — this only renders it.
+    public func translated(_ text: String) -> Line {
+        Line(id: id, source: source, translation: text, at: at)
+    }
+}
+
 /// Everything the caption bar draws.
 public enum CaptionEvent: Equatable, Sendable {
     /// Live source text for the top line, updating word by word.

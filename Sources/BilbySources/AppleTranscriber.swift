@@ -1,0 +1,99 @@
+// AVAudioPCMBuffer is not Sendable, so a stream of them cannot cross an
+// isolation boundary under strict concurrency. Buffers here are produced and
+// consumed by one task and never shared, which the compiler cannot see.
+@preconcurrency import AVFoundation
+import BilbyCore
+import Foundation
+import Speech
+
+/// Apple's on-device speech model, exposed as a stream of `Utterance`.
+///
+/// Only volatile results are forwarded. Measured on real audio, finals arrive
+/// up to 4.5 s later, carry no punctuation the volatile result did not already
+/// have, and sometimes reword what is already on screen — one turned
+/// "off site" into "of site". Waiting for them would cost the latency budget
+/// and buy worse text.
+public struct AppleTranscriber: Sendable {
+    private let locale: Locale
+
+    public init(locale: Locale = Locale(identifier: "en_US")) { self.locale = locale }
+
+    /// Takes a factory rather than a stream: a stream of non-Sendable buffers
+    /// cannot cross an isolation boundary, so it is created inside the task
+    /// that consumes it and never escapes.
+    public func utterances(
+        from source: @escaping @Sendable () -> AsyncStream<AVAudioPCMBuffer>
+    ) -> AsyncStream<Utterance> {
+        AsyncStream { continuation in
+            let task = Task {
+                let transcriber = SpeechTranscriber(
+                    locale: locale,
+                    transcriptionOptions: [],
+                    reportingOptions: [.volatileResults],
+                    attributeOptions: [.audioTimeRange]
+                )
+                let analyzer = SpeechAnalyzer(modules: [transcriber])
+                guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(
+                    compatibleWith: [transcriber]
+                ) else {
+                    continuation.finish()
+                    return
+                }
+
+                let (input, feed) = AsyncStream<AnalyzerInput>.makeStream()
+                try? await analyzer.start(inputSequence: input)
+
+                let reader = Task {
+                    for try await result in transcriber.results where !result.isFinal {
+                        var spokenAt = Duration.zero
+                        for run in result.text.runs {
+                            if let range = run.audioTimeRange {
+                                spokenAt = .seconds(range.end.seconds)
+                            }
+                        }
+                        continuation.yield(
+                            Utterance(String(result.text.characters), at: spokenAt)
+                        )
+                    }
+                }
+
+                var converter: AVAudioConverter?
+                for await buffer in source() {
+                    guard let converted = convert(buffer, to: format, using: &converter) else { continue }
+                    feed.yield(AnalyzerInput(buffer: converted))
+                }
+                feed.finish()
+                try? await analyzer.finalizeAndFinishThroughEndOfInput()
+                _ = try? await reader.value
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private func convert(
+        _ buffer: AVAudioPCMBuffer,
+        to format: AVAudioFormat,
+        using converter: inout AVAudioConverter?
+    ) -> AVAudioPCMBuffer? {
+        if buffer.format == format { return buffer }
+        if converter == nil { converter = AVAudioConverter(from: buffer.format, to: format) }
+        guard let converter else { return nil }
+
+        let ratio = format.sampleRate / buffer.format.sampleRate
+        guard let output = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
+        ) else { return nil }
+
+        var consumed = false
+        var error: NSError?
+        converter.convert(to: output, error: &error) { _, status in
+            if consumed { status.pointee = .noDataNow; return nil }
+            consumed = true
+            status.pointee = .haveData
+            return buffer
+        }
+        return error == nil ? output : nil
+    }
+}
