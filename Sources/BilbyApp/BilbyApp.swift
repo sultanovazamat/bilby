@@ -72,6 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Log.start()
+        Log.write("app: launched, build \(Bundle.main.bundlePath)")
         let panel = CaptionPanel(content: CaptionBar(model: model))
         panel.placeAtBottom()
         self.panel = panel
@@ -85,14 +87,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func refreshSources() { sources = SystemAudioTap.playing() }
+    func refreshSources() {
+        let found = SystemAudioTap.playing()
+        if found.map(\.bundleID) != sources.map(\.bundleID) {
+            Log.write("app: playing — \(found.map { "\($0.name) [\($0.bundleID)] pid \($0.pid)" })")
+        }
+        sources = found
+    }
 
     func togglePlayback() {
         if isListening { stop() } else if let first = sources.first { listen(to: first) }
     }
 
     func listen(to source: AudioProcess) {
-        let tap = SystemAudioTap()
+        Log.write("app: listening to \(source.name) [\(source.bundleID)] object \(source.id)")
+        let counter = diagnostics
+        let tap = SystemAudioTap(onFailure: { counter.failed($0) })
         let id = source.id
         start { tap.buffers(of: [id]) }
     }
@@ -130,8 +140,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for await event in session.events(from: utterances) {
                 switch event {
                 case .live: diagnostics.heardSomething()
-                case .line: diagnostics.committedLine()
-                case .translated: break
+                case .line(let line):
+                    Log.write("line: \(line.source)")
+                    diagnostics.committedLine()
+                case .translated(_, let text): Log.write("translated: \(text)")
                 }
                 model.apply(event)
                 panel?.fitContent()

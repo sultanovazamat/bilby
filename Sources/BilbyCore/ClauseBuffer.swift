@@ -18,43 +18,53 @@ public struct ClauseBuffer: Sendable {
     }
 
     private let policy: Policy
-    /// Characters of the current utterance already turned into clauses.
-    private var emitted = 0
+    /// The part of the current utterance already turned into clauses.
+    private var shown = ""
 
     public init(policy: Policy = Policy()) { self.policy = policy }
 
     /// Feeds one recognition result and returns the clauses it completed.
     public mutating func consume(_ utterance: Utterance) -> [Clause] {
-        // Text already shown is never revisited. Real finals reword what the
-        // volatile results said — one turned "off site" into "of site" — but a
-        // caption the reader has already started reading must not change, and
-        // re-emitting it would put the same line on screen twice.
-        let characters = Array(utterance.text)
-        var rest = characters.dropFirst(min(emitted, characters.count))
-        var clauses: [Clause] = []
+        // Utterance boundaries are detected by content, not by `isFinal`.
+        // Finals arrive seconds late and are not forwarded at all, so relying
+        // on them left `shown` stale and sliced the opening words off every
+        // following sentence — "watch out" arrived as "ch out".
+        var rest: Substring
+        if utterance.text.hasPrefix(shown) {
+            rest = utterance.text.dropFirst(shown.count)
+        } else if zip(utterance.text, shown).prefix(while: ==).count >= shown.count / 2 {
+            // Same sentence, reworded behind our back: one real result turned
+            // "off site" into "of site". Keep what is on screen and take only
+            // what is genuinely new.
+            rest = utterance.text.dropFirst(min(shown.count, utterance.text.count))
+        } else {
+            shown = ""
+            rest = utterance.text[...]
+        }
 
+        var clauses: [Clause] = []
         while let cut = rest.firstIndex(where: { policy.terminators.contains($0) }) {
-            clauses.append(take(&rest, upTo: cut, at: utterance.at))
+            clauses.append(take(&rest, through: cut, at: utterance.at))
         }
 
         if utterance.isFinal {
-            clauses.append(Clause(text: String(rest).trimmed, at: utterance.at))
-            emitted = 0
-        } else if String(rest).wordCount >= policy.maxWords,
+            clauses.append(Clause(text: rest.trimmed, at: utterance.at))
+            shown = ""
+        } else if rest.wordCount >= policy.maxWords,
                   let cut = rest.lastIndex(where: { policy.softBreaks.contains($0) }) {
-            clauses.append(take(&rest, upTo: cut, at: utterance.at))
+            clauses.append(take(&rest, through: cut, at: utterance.at))
         }
 
-        return clauses.filter { !$0.text.isEmpty }
+        // A lone "." is a clause by the rules above and nonsense on screen.
+        return clauses.filter { $0.text.contains(where: \.isLetter) }
     }
 
-
     private mutating func take(
-        _ rest: inout ArraySlice<Character>, upTo cut: Int, at time: Duration
+        _ rest: inout Substring, through cut: Substring.Index, at time: Duration
     ) -> Clause {
-        let piece = rest[rest.startIndex...cut]
-        emitted += piece.count
+        let piece = rest[...cut]
+        shown += piece
         rest = rest[rest.index(after: cut)...]
-        return Clause(text: String(piece).trimmed, at: time)
+        return Clause(text: piece.trimmed, at: time)
     }
 }

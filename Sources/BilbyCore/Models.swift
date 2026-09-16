@@ -54,7 +54,7 @@ public enum CaptionEvent: Equatable, Sendable {
     case translated(Line.ID, String)
 }
 
-extension String {
+extension StringProtocol {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
     var wordCount: Int { split(whereSeparator: \.isWhitespace).count }
 }

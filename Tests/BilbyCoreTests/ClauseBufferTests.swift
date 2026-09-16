@@ -53,13 +53,31 @@ struct ClauseBufferTests {
         #expect(clauses([Utterance("well, maybe")]) == [[]])
     }
 
-    @Test("never shows a clause twice when the transcriber rewords it")
-    func ignoresRevisionOfShownText() {
+    /// From a real run: finals are never forwarded, so a new sentence has to
+    /// be recognised by content or its opening words are sliced off —
+    /// "watch out, Dwight" arrived on screen as "ch out, Dwight".
+    @Test("does not slice the start off the next sentence")
+    func detectsANewUtterance() {
+        let got = clauses([
+            Utterance("It appears that the website has become alive."),
+            Utterance("watch out, Dwight."),
+        ])
+        #expect(got == [["It appears that the website has become alive."],
+                        ["watch out, Dwight."]])
+    }
+
+    @Test("a clause with no words never reaches the screen")
+    func dropsPunctuationOnlyClauses() {
+        #expect(clauses([Utterance(". .")]) == [[]])
+    }
+
+    @Test("text sharing almost nothing with the screen is a new sentence")
+    func treatsUnrelatedTextAsNewUtterance() {
         let got = clauses([
             Utterance("we ship on Friday. and then we"),
             Utterance("we shipped."),
         ])
-        #expect(got == [["we ship on Friday."], []])
+        #expect(got == [["we ship on Friday."], ["we shipped."]])
     }
 
     /// Taken from a real run: the volatile result already carries the full stop

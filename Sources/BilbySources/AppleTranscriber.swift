@@ -46,13 +46,17 @@ public struct AppleTranscriber: Sendable {
                 guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(
                     compatibleWith: [transcriber]
                 ) else {
+                    Log.write("speech: FAILED — no compatible audio format for \(locale.identifier)")
                     continuation.finish()
                     return
                 }
+                Log.write("speech: analyzer format \(format.sampleRate) Hz, \(format.channelCount) ch")
 
                 let (input, feed) = AsyncStream<AnalyzerInput>.makeStream()
-                try? await analyzer.start(inputSequence: input)
+                do { try await analyzer.start(inputSequence: input) }
+                catch { Log.write("speech: FAILED to start — \(error)") }
 
+                var heard = 0
                 let reader = Task {
                     for try await result in transcriber.results where !result.isFinal {
                         var spokenAt = Duration.zero
@@ -61,16 +65,23 @@ public struct AppleTranscriber: Sendable {
                                 spokenAt = .seconds(range.end.seconds)
                             }
                         }
-                        continuation.yield(
-                            Utterance(String(result.text.characters), at: spokenAt)
-                        )
+                        let text = String(result.text.characters)
+                        if heard == 0 { Log.write("speech: first result — \(text)") }
+                        heard += 1
+                        continuation.yield(Utterance(text, at: spokenAt))
                     }
                 }
 
                 var converter: AVAudioConverter?
+                var fed = 0
                 for await buffer in source() {
                     onAudio?(Int(buffer.frameLength))
-                    guard let converted = convert(buffer, to: format, using: &converter) else { continue }
+                    guard let converted = convert(buffer, to: format, using: &converter) else {
+                        Log.write("speech: conversion failed from \(buffer.format)")
+                        continue
+                    }
+                    if fed == 0 { Log.write("speech: first buffer converted and fed") }
+                    fed += 1
                     feed.yield(AnalyzerInput(buffer: converted))
                 }
                 feed.finish()

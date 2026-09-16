@@ -2,6 +2,7 @@
 import AudioToolbox
 import CoreAudio
 import AppKit
+import BilbyCore
 import Foundation
 
 /// An app that is currently playing sound.
@@ -40,8 +41,24 @@ public struct AudioProcess: Sendable, Identifiable, Hashable {
 /// microphone back to you. That is exactly what captions need, and it is why
 /// Bilby never asks for microphone access.
 public final class SystemAudioTap: @unchecked Sendable {
+    private let onFailure: (@Sendable (String) -> Void)?
 
-    public init() {}
+    /// `onFailure` receives the Core Audio status that stopped us. Without it
+    /// every problem — permission, format, device — looks like silence.
+    public init(onFailure: (@Sendable (String) -> Void)? = nil) {
+        self.onFailure = onFailure
+    }
+
+    /// Core Audio statuses are four-character codes; the number alone is
+    /// unsearchable.
+    private static func describe(_ status: OSStatus) -> String {
+        var code = status.bigEndian
+        let characters = withUnsafeBytes(of: &code) { bytes in
+            String(bytes.map { Character(UnicodeScalar($0)) })
+        }
+        let printable = characters.allSatisfy { $0.isLetter || $0.isNumber || $0.isPunctuation }
+        return printable ? "\(status) '\(characters)'" : "\(status)"
+    }
 
     /// Apps making sound right now.
     public static func playing() -> [AudioProcess] {
@@ -74,16 +91,30 @@ public final class SystemAudioTap: @unchecked Sendable {
             description.muteBehavior = .unmuted          // the user must still hear the call
             description.isPrivate = true
 
-            guard AudioHardwareCreateProcessTap(description, &tap) == noErr,
-                  let format = Self.tapFormat(tap),
-                  let outputUID = Self.defaultOutputUID(),
-                  AudioHardwareCreateAggregateDevice(
-                      Self.aggregateDescription(tapUUID: description.uuid, outputUID: outputUID),
-                      &aggregate
-                  ) == noErr
-            else {
+            func giveUp(_ reason: String) {
+                Log.write("tap: FAILED — \(reason)")
+                onFailure?(reason)
                 continuation.finish()
-                return
+            }
+            Log.write("tap: starting for processes \(processes)")
+
+            let arrived = FrameCounter()
+            let tapStatus = AudioHardwareCreateProcessTap(description, &tap)
+            guard tapStatus == noErr else {
+                return giveUp("create tap \(Self.describe(tapStatus))")
+            }
+            guard let format = Self.tapFormat(tap) else {
+                return giveUp("tap reported no audio format")
+            }
+            guard let outputUID = Self.defaultOutputUID() else {
+                return giveUp("no default output device")
+            }
+            let aggregateStatus = AudioHardwareCreateAggregateDevice(
+                Self.aggregateDescription(tapUUID: description.uuid, outputUID: outputUID),
+                &aggregate
+            )
+            guard aggregateStatus == noErr else {
+                return giveUp("create aggregate \(Self.describe(aggregateStatus))")
             }
 
             // @Sendable is load-bearing. Without it the closure inherits the
@@ -92,35 +123,45 @@ public final class SystemAudioTap: @unchecked Sendable {
             // traps the process the moment audio starts flowing.
             let status = AudioDeviceCreateIOProcIDWithBlock(&proc, aggregate, nil) {
                 @Sendable _, input, _, _, _ in
-                guard let copy = AVAudioPCMBuffer(
-                    pcmFormat: format, frameCapacity: 4096
-                ) else { return }
+                let incoming = UnsafeMutableAudioBufferListPointer(
+                    UnsafeMutablePointer(mutating: input)
+                )
+                guard let first = incoming.first else { return }
+
+                // frameLength must be set before the output buffer list is
+                // read: AVAudioPCMBuffer reports mDataByteSize from the length,
+                // not the capacity, so on a fresh buffer every size is zero and
+                // a min() against it copies nothing at all.
+                let bytesPerFrame = max(Int(format.streamDescription.pointee.mBytesPerFrame), 1)
+                let frames = Int(first.mDataByteSize) / bytesPerFrame
+                arrived.record(frames)
+                guard frames > 0,
+                      let copy = AVAudioPCMBuffer(
+                          pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)
+                      )
+                else { return }
+                copy.frameLength = AVAudioFrameCount(frames)
 
                 // Core Audio reuses its list immediately, so copy the bytes.
                 // memcpy rather than per-channel: the tap hands over
                 // interleaved stereo, where floatChannelData has one buffer.
-                let incoming = UnsafeMutableAudioBufferListPointer(
-                    UnsafeMutablePointer(mutating: input)
-                )
                 let outgoing = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
-                var frames = 0
                 for index in 0..<min(incoming.count, outgoing.count) {
                     guard let from = incoming[index].mData,
                           let into = outgoing[index].mData else { continue }
-                    let bytes = min(Int(incoming[index].mDataByteSize),
-                                    Int(outgoing[index].mDataByteSize))
-                    memcpy(into, from, bytes)
-                    outgoing[index].mDataByteSize = UInt32(bytes)
-                    frames = max(frames, bytes / Int(format.streamDescription.pointee.mBytesPerFrame))
+                    memcpy(into, from, min(Int(incoming[index].mDataByteSize),
+                                           Int(outgoing[index].mDataByteSize)))
                 }
-                copy.frameLength = AVAudioFrameCount(frames)
-                guard frames > 0 else { return }
                 continuation.yield(copy)
             }
-            guard status == noErr, let proc, AudioDeviceStart(aggregate, proc) == noErr else {
-                continuation.finish()
-                return
+            guard status == noErr, let proc else {
+                return giveUp("create io proc \(Self.describe(status))")
             }
+            let startStatus = AudioDeviceStart(aggregate, proc)
+            guard startStatus == noErr else {
+                return giveUp("start device \(Self.describe(startStatus))")
+            }
+            Log.write("tap: running — \(format.sampleRate) Hz, \(format.channelCount) ch")
 
             // Immutable copies: the teardown closure runs on another thread.
             let (tapID, aggregateID, procID) = (tap, aggregate, proc)
@@ -198,5 +239,24 @@ public final class SystemAudioTap: @unchecked Sendable {
         var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
         guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &ids) == noErr else { return [] }
         return ids
+    }
+}
+
+
+/// Logs the first buffer and then one line a second, so the log shows whether
+/// audio is flowing without drowning in a line per callback.
+final class FrameCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var frames = 0
+    private var lastReport = Date.distantPast
+
+    func record(_ count: Int) {
+        lock.lock()
+        frames += count
+        let total = frames
+        let due = Date().timeIntervalSince(lastReport) > 1
+        if due { lastReport = Date() }
+        lock.unlock()
+        if due { Log.write("tap: \(total) frames delivered") }
     }
 }
