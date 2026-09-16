@@ -5,5 +5,8 @@ import PackageDescription
 let package = Package(
     name: "Spike",
     platforms: [.macOS("26.0")],
-    targets: [.executableTarget(name: "probe")]
+    targets: [
+        .executableTarget(name: "probe"),
+        .executableTarget(name: "latency"),
+    ]
 )

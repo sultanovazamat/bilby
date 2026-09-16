@@ -25,10 +25,12 @@ public struct ClauseBuffer: Sendable {
 
     /// Feeds one recognition result and returns the clauses it completed.
     public mutating func consume(_ utterance: Utterance) -> [Clause] {
-        // The transcriber may revise its wording downward; start the utterance over.
-        if utterance.text.count < emitted { emitted = 0 }
-
-        var rest = Array(utterance.text)[emitted...]
+        // Text already shown is never revisited. Real finals reword what the
+        // volatile results said — one turned "off site" into "of site" — but a
+        // caption the reader has already started reading must not change, and
+        // re-emitting it would put the same line on screen twice.
+        let characters = Array(utterance.text)
+        var rest = characters.dropFirst(min(emitted, characters.count))
         var clauses: [Clause] = []
 
         while let cut = rest.firstIndex(where: { policy.terminators.contains($0) }) {

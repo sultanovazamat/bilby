@@ -85,3 +85,62 @@ Nothing to do with Speech or Translation.
 
 **Latency — risk 1, the one that decides whether the product exists.** Needs
 audio through `SpeechAnalyzer`. Next.
+
+---
+
+# Latency — measured
+
+13.3 s of English speech fed at wall-clock pace, exactly as a live tap would.
+Lag = (result arrived) − (word was spoken), from `.audioTimeRange` attributes.
+Source: `Spike/Sources/latency/Latency.swift`.
+
+## Result
+
+**69 results · median 0.32 s · p90 0.78 s.**
+
+Transcription is not the bottleneck. Against the 2.5 s acceptance criterion
+this leaves roughly 1.7 s of budget for translation.
+
+## The finding that matters more than the number
+
+**Volatile results already carry sentence punctuation.**
+
+```
+[live]  lag 0.17s — So let's circle back on the runway before we commit to Q3.
+[final] lag 1.11s — So let's circle back on the runway before we commit to Q3.
+```
+
+The full stop arrives with the volatile result. The final adds **nothing but
+delay** — and sometimes makes the text worse:
+
+```
+[live]  lag 0.33s — ...before the off site, but the runway is tighter...
+[final] lag 4.52s — ...before the of site, but the runway is tighter...
+```
+
+4.52 s, and "off site" became "of site".
+
+**So Bilby must cut clauses from volatile results and never wait for
+`isFinal`.** Waiting would blow the entire latency budget on the slowest
+sentences and buy worse text.
+
+## A real bug this exposed
+
+`ClauseBuffer` reset its emitted offset whenever an utterance got shorter,
+assuming the transcriber had started over. Real finals are shorter *because
+they reword what was already shown* — so the reset re-emitted the whole
+sentence and the same line would have reached the screen twice.
+
+Fixed: shown text is never revisited. Covered by
+`finalDoesNotDuplicate`, built from the exact transcript above.
+
+Found before a single line of UI existed. This is what the spike was for.
+
+## Caveats
+
+- `say` audio is clean and synthetic. Real calls are compressed, accented and
+  overlapping; expect worse accuracy and somewhat worse lag. Re-measure on a
+  recorded Zoom call before trusting these numbers.
+- **Translation latency is still unmeasured** — no language pack is installed,
+  and installing one needs the SwiftUI download path. The 2.5 s criterion is
+  not yet proven end to end.

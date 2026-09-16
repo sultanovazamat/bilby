@@ -53,13 +53,25 @@ struct ClauseBufferTests {
         #expect(clauses([Utterance("well, maybe")]) == [[]])
     }
 
-    @Test("survives the transcriber revising its wording downward")
-    func survivesRevision() {
+    @Test("never shows a clause twice when the transcriber rewords it")
+    func ignoresRevisionOfShownText() {
         let got = clauses([
             Utterance("we ship on Friday. and then we"),
             Utterance("we shipped."),
         ])
-        #expect(got == [["we ship on Friday."], ["we shipped."]])
+        #expect(got == [["we ship on Friday."], []])
+    }
+
+    /// Taken from a real run: the volatile result already carries the full stop
+    /// and arrives ~0.2s after the words; the final arrives seconds later with
+    /// different wording. Only one line may reach the screen.
+    @Test("a slow, reworded final does not duplicate the volatile clause")
+    func finalDoesNotDuplicate() {
+        let got = clauses([
+            Utterance("We should ship the beta before the off site."),
+            Utterance("We should ship the beta before the of site.", isFinal: true),
+        ])
+        #expect(got == [["We should ship the beta before the off site."], []])
     }
 
     @Test("starts a new utterance cleanly after a final one")
