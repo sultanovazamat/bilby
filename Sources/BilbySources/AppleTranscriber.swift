@@ -13,18 +13,26 @@ import Speech
 /// have, and sometimes reword what is already on screen — one turned
 /// "off site" into "of site". Waiting for them would cost the latency budget
 /// and buy worse text.
-public struct AppleTranscriber: Sendable {
+public struct AppleTranscriber: AudioTranscribing {
     private let locale: Locale
     /// Called with each buffer's frame count. Lets the app tell "no audio
     /// arrived" apart from "audio arrived but nothing was recognised" — the
     /// two look identical on an empty caption bar.
     private let onAudio: (@Sendable (Int) -> Void)?
 
+    /// How much audio to gather before handing it over. The tap delivers
+    /// 512-frame buffers — under 11 ms — and feeding the analyzer at that rate
+    /// made it withhold partial results until the sentence was complete,
+    /// costing 1.5 s. The file spike that measured 0.3 s fed 100 ms chunks.
+    private let chunk: Duration
+
     public init(
         locale: Locale = Locale(identifier: "en_US"),
+        chunk: Duration = .milliseconds(100),
         onAudio: (@Sendable (Int) -> Void)? = nil
     ) {
         self.locale = locale
+        self.chunk = chunk
         self.onAudio = onAudio
     }
 
@@ -50,7 +58,9 @@ public struct AppleTranscriber: Sendable {
                     continuation.finish()
                     return
                 }
-                Log.write("speech: analyzer format \(format.sampleRate) Hz, \(format.channelCount) ch")
+                Log.write("speech: analyzer format \(format.sampleRate) Hz, "
+                    + "\(format.channelCount) ch, \(format.commonFormat.rawValue == 1 ? "float32" : "other"), "
+                    + "\(format.streamDescription.pointee.mBytesPerFrame) bytes/frame")
 
                 let (input, feed) = AsyncStream<AnalyzerInput>.makeStream()
                 do { try await analyzer.start(inputSequence: input) }
@@ -74,15 +84,28 @@ public struct AppleTranscriber: Sendable {
 
                 var converter: AVAudioConverter?
                 var fed = 0
+                let target = AVAudioFrameCount(
+                    format.sampleRate * (Double(chunk.components.seconds)
+                        + Double(chunk.components.attoseconds) / 1e18)
+                )
+                var batch = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: target * 2)
+
                 for await buffer in source() {
                     onAudio?(Int(buffer.frameLength))
                     guard let converted = convert(buffer, to: format, using: &converter) else {
                         Log.write("speech: conversion failed from \(buffer.format)")
                         continue
                     }
-                    if fed == 0 { Log.write("speech: first buffer converted and fed") }
+                    guard let pending = batch else { continue }
+                    if !append(converted, to: pending), fed == 0 {
+                        Log.write("speech: FAILED to append \(converted.frameLength) frames")
+                    }
+                    guard pending.frameLength >= target else { continue }
+
+                    if fed == 0 { Log.write("speech: feeding \(pending.frameLength) frame chunks") }
                     fed += 1
-                    feed.yield(AnalyzerInput(buffer: converted))
+                    feed.yield(AnalyzerInput(buffer: pending))
+                    batch = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: target * 2)
                 }
                 feed.finish()
                 try? await analyzer.finalizeAndFinishThroughEndOfInput()
@@ -91,6 +114,34 @@ public struct AppleTranscriber: Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// Appends one buffer to another, dropping the overflow rather than
+    /// growing: a dropped millisecond is better than a stalled stream.
+    ///
+    /// Copies bytes rather than `floatChannelData`, which is nil whenever the
+    /// analyzer asks for a format that is not float32 — and a nil there fails
+    /// silently, which cost an evening.
+    private func append(_ source: AVAudioPCMBuffer, to destination: AVAudioPCMBuffer) -> Bool {
+        let room = destination.frameCapacity - destination.frameLength
+        let frames = min(source.frameLength, room)
+        guard frames > 0 else { return false }
+
+        let stride = Int(destination.format.streamDescription.pointee.mBytesPerFrame)
+        let from = UnsafeMutableAudioBufferListPointer(
+            UnsafeMutablePointer(mutating: source.audioBufferList)
+        )
+        let into = UnsafeMutableAudioBufferListPointer(destination.mutableAudioBufferList)
+        for index in 0..<min(from.count, into.count) {
+            guard let origin = from[index].mData, let target = into[index].mData else { continue }
+            memcpy(
+                target.advanced(by: Int(destination.frameLength) * stride),
+                origin,
+                Int(frames) * stride
+            )
+        }
+        destination.frameLength += frames
+        return true
     }
 
     private func convert(

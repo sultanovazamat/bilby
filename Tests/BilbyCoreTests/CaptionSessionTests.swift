@@ -32,6 +32,22 @@ struct CaptionSessionTests {
         #expect(translated == ["[ru] two."])
     }
 
+    /// Measured on a real call: words are recognised about 1.2 s before the
+    /// model commits to a full stop. Waiting for it put the reader 1.6 s
+    /// behind the speaker, so the unfinished sentence is translated too.
+    @Test("the sentence still being spoken is translated before it ends")
+    func draftsUnfinishedSpeech() async {
+        let events = await run([Utterance("we should ship the beta")])
+        let drafts = events.compactMap { if case .draft(let text) = $0 { text } else { nil } }
+        #expect(drafts == ["[ru] we should ship the beta"])
+    }
+
+    @Test("a fragment too short to translate produces no draft")
+    func waitsForEnoughWords() async {
+        let events = await run([Utterance("we")])
+        #expect(!events.contains { if case .draft = $0 { true } else { false } })
+    }
+
     @Test("every line is shown before its translation exists")
     func showsSourceFirst() async {
         let events = await run([Utterance("one.", isFinal: true)])

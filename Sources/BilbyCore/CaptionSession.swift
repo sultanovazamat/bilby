@@ -7,15 +7,20 @@ public struct CaptionSession: Sendable {
     private let translator: any Translating
     private let target: Language
     private let policy: ClauseBuffer.Policy
+    /// How often the unfinished sentence may be retranslated. Translation
+    /// costs 0.07 s, so this is about not thrashing, not about cost.
+    private let draftInterval: Duration
 
     public init(
         translator: any Translating,
         target: Language,
-        policy: ClauseBuffer.Policy = ClauseBuffer.Policy()
+        policy: ClauseBuffer.Policy = ClauseBuffer.Policy(),
+        draftInterval: Duration = .milliseconds(400)
     ) {
         self.translator = translator
         self.target = target
         self.policy = policy
+        self.draftInterval = draftInterval
     }
 
     public func events(from utterances: AsyncStream<Utterance>) -> AsyncStream<CaptionEvent> {
@@ -24,6 +29,9 @@ public struct CaptionSession: Sendable {
                 // Owned by this task alone, so no lock and no actor are needed.
                 var engine = CaptionEngine(policy: policy)
 
+                var lastDraft = ""
+                var lastDraftAt = ContinuousClock.now - .seconds(10)
+
                 for await utterance in utterances {
                     for event in engine.consume(utterance) { continuation.yield(event) }
 
@@ -31,6 +39,19 @@ public struct CaptionSession: Sendable {
                         let translation = try? await translator.translate(line.source, to: target)
                         for event in engine.resolve(line.id, translation: translation) {
                             continuation.yield(event)
+                        }
+                    }
+
+                    // The words are recognised about 1.2 s before the model
+                    // decides the sentence ended. Translating them now is what
+                    // takes the reader's wait from 1.6 s down to under half.
+                    if let draft = engine.draftable,
+                       draft != lastDraft,
+                       ContinuousClock.now - lastDraftAt >= draftInterval {
+                        lastDraft = draft
+                        lastDraftAt = ContinuousClock.now
+                        if let text = try? await translator.translate(draft, to: target) {
+                            continuation.yield(.draft(text))
                         }
                     }
                 }

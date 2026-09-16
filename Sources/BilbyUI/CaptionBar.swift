@@ -16,7 +16,19 @@ public struct CaptionBar: View {
 
     public init(model: CaptionModel) { self.model = model }
 
-    private var isEmpty: Bool { model.live.isEmpty && model.latest == nil }
+    private var isEmpty: Bool {
+        model.live.isEmpty && model.latest == nil && model.draft.isEmpty
+    }
+
+    /// While a sentence is still being spoken its provisional translation is
+    /// shown, dimmed. The settled one replaces it a beat later, at full
+    /// weight. Waiting for the settled text costs 1.2 s of silence.
+    private var translation: (text: String, settled: Bool)? {
+        if !model.draft.isEmpty { return (model.draft, false) }
+        if let line = model.latest, let text = line.translation { return (text, true) }
+        if let line = model.latest { return (line.source, false) }
+        return nil
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -30,17 +42,13 @@ public struct CaptionBar: View {
                     .transition(.opacity)
             }
 
-            if let line = model.latest {
-                Text(line.translation ?? line.source)
+            if let translation {
+                Text(translation.text)
                     .font(.system(size: 23, weight: .medium, design: .rounded))
-                    .foregroundStyle(line.translation == nil ? .secondary : .primary)
+                    .foregroundStyle(translation.settled ? .primary : .secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .id(line.id)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .offset(y: 8)),
-                        removal: .opacity
-                    ))
+                    .contentTransition(.interpolate)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -61,7 +69,7 @@ public struct CaptionBar: View {
         .scaleEffect(isEmpty ? 0.97 : 1, anchor: .bottom)
         .blur(radius: isEmpty ? 6 : 0)
         .animation(.smooth(duration: 0.28), value: isEmpty)
-        .animation(.smooth(duration: 0.22), value: model.latest?.id)
+        .animation(.smooth(duration: 0.18), value: translation?.text)
         .animation(.easeOut(duration: 0.12), value: model.live)
     }
 }

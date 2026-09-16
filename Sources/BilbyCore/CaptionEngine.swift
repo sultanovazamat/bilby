@@ -13,6 +13,12 @@ public struct CaptionEngine: Sendable {
     /// The oldest line still waiting to be translated.
     public var nextPending: Line? { transcript.nextPending }
 
+    /// The sentence still being spoken, if it is worth translating yet.
+    public var draftable: String? {
+        let text = buffer.pending
+        return text.wordCount >= 3 ? text : nil
+    }
+
     public mutating func consume(_ utterance: Utterance) -> [CaptionEvent] {
         var events: [CaptionEvent] = []
         if !utterance.isFinal { events.append(.live(utterance.text)) }

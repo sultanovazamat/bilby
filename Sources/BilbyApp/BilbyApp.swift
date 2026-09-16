@@ -30,6 +30,14 @@ struct BilbyApp: App {
 
             Divider()
 
+            // Two recognisers, switchable on a live call, because the only
+            // honest comparison is the same audio through both.
+            Menu("Engine — \(delegate.engine.name)") {
+                ForEach(Engine.allCases, id: \.self) { engine in
+                    Button(engine.name) { delegate.use(engine) }
+                }
+            }
+
             Menu("Listen to") {
                 ForEach(delegate.sources) { source in
                     Button(source.name) { delegate.listen(to: source) }
@@ -50,9 +58,21 @@ struct BilbyApp: App {
     }
 }
 
+enum Engine: String, CaseIterable, Sendable {
+    case apple, parakeet
+
+    var name: String {
+        switch self {
+        case .apple: "Apple (bursts every 3.6s)"
+        case .parakeet: "Parakeet EOU (160ms)"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private(set) var engine: Engine = .parakeet
     private(set) var isListening = false
     private(set) var isHidden = false
     private(set) var sources: [AudioProcess] = []
@@ -85,6 +105,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.diagnosticLine = self.isListening ? self.diagnostics.summary : "Idle"
             }
         }
+    }
+
+    func use(_ engine: Engine) {
+        let wasListening = isListening
+        self.engine = engine
+        Log.write("app: engine — \(engine.rawValue)")
+        stop()
+        if wasListening, let first = sources.first { listen(to: first) }
     }
 
     func refreshSources() {
@@ -133,17 +161,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.orderFrontRegardless()
 
         let counter = diagnostics
+        let chosen = engine
         running = Task {
-            let transcriber = AppleTranscriber(onAudio: { counter.audio($0) })
+            // Wall clock against the audio clock: `line.at` is when the words
+            // were spoken, so the difference is what the user actually waits.
+            let started = ContinuousClock.now
+            func lag(_ spokenAt: Duration) -> String {
+                let elapsed = ContinuousClock.now - started
+                let seconds = Double((elapsed - spokenAt).components.seconds)
+                    + Double((elapsed - spokenAt).components.attoseconds) / 1e18
+                return String(format: "%.2fs", seconds)
+            }
+            let transcriber: any AudioTranscribing = switch chosen {
+            case .apple: AppleTranscriber(onAudio: { counter.audio($0) })
+            case .parakeet: ParakeetTranscriber(onAudio: { counter.audio($0) })
+            }
             let utterances = transcriber.utterances(from: audio)
+            var firstWords: String?
+            _ = firstWords
             let session = CaptionSession(translator: AppleTranslator(), target: Language("ru"))
             for await event in session.events(from: utterances) {
                 switch event {
-                case .live: diagnostics.heardSomething()
+                case .live(let text):
+                    if !text.isEmpty, firstWords == nil { firstWords = text }
+                    diagnostics.heardSomething()
                 case .line(let line):
-                    Log.write("line: \(line.source)")
+                    Log.write("lag \(lag(line.at)) to line — \(line.source)")
                     diagnostics.committedLine()
-                case .translated(_, let text): Log.write("translated: \(text)")
+                case .draft(let text):
+                    Log.write("draft — \(text)")
+                case .translated(let id, let text):
+                    let spokenAt = model.lines.first { $0.id == id }?.at ?? .zero
+                    Log.write("lag \(lag(spokenAt)) to translation — \(text)")
                 }
                 model.apply(event)
                 panel?.fitContent()

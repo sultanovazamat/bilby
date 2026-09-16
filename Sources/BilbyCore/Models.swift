@@ -52,6 +52,10 @@ public enum CaptionEvent: Equatable, Sendable {
     case line(Line)
     /// The translation for a line that was already shown.
     case translated(Line.ID, String)
+    /// A provisional translation of the sentence still being spoken. Unlike a
+    /// line it may change, and it exists because waiting for the model to
+    /// commit to a full stop costs 1.2 s — measured.
+    case draft(String)
 }
 
 extension StringProtocol {

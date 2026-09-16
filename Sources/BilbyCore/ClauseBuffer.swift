@@ -20,6 +20,9 @@ public struct ClauseBuffer: Sendable {
     private let policy: Policy
     /// The part of the current utterance already turned into clauses.
     private var shown = ""
+    /// The words spoken since the last clause closed. Recognised long before
+    /// the model commits to a full stop, so this is what a draft translates.
+    public private(set) var pending = ""
 
     public init(policy: Policy = Policy()) { self.policy = policy }
 
@@ -54,6 +57,8 @@ public struct ClauseBuffer: Sendable {
                   let cut = rest.lastIndex(where: { policy.softBreaks.contains($0) }) {
             clauses.append(take(&rest, through: cut, at: utterance.at))
         }
+
+        pending = rest.trimmed
 
         // A lone "." is a clause by the rules above and nonsense on screen.
         return clauses.filter { $0.text.contains(where: \.isLetter) }

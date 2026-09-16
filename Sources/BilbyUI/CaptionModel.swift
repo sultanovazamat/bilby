@@ -9,6 +9,9 @@ public final class CaptionModel {
     public private(set) var live = ""
     /// Committed lines, oldest first. A line is never rewritten.
     public private(set) var lines: [Line] = []
+    /// Provisional translation of the sentence being spoken. This one may
+    /// change — it is shown differently so the reader knows.
+    public private(set) var draft = ""
 
     /// Hidden by the menu bar. The panel stays alive so captions keep flowing
     /// underneath — reappearing is instant rather than a cold start.
@@ -20,6 +23,7 @@ public final class CaptionModel {
     public func clear() {
         live = ""
         lines = []
+        draft = ""
     }
 
     public var latest: Line? { lines.last }
@@ -33,6 +37,9 @@ public final class CaptionModel {
         case .translated(let id, let text):
             guard let index = lines.firstIndex(where: { $0.id == id }) else { return }
             lines[index] = lines[index].translated(text)
+            draft = ""
+        case .draft(let text):
+            draft = text
         }
     }
 }
