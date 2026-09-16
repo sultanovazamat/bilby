@@ -21,6 +21,17 @@ public struct UnifiedTranscriber: AudioTranscribing {
         self.onAudio = onAudio
     }
 
+    public func warmUp() async {
+        let started = ContinuousClock.now
+        Log.write("unified: warming up…")
+        do {
+            try await StreamingUnifiedAsrManager().loadModels()
+            Log.write("unified: warm in \(ContinuousClock.now - started)")
+        } catch {
+            Log.write("unified: FAILED to warm — \(error)")
+        }
+    }
+
     public func utterances(
         from source: @escaping @Sendable () -> AsyncStream<AVAudioPCMBuffer>
     ) -> AsyncStream<Utterance> {

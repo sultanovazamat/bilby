@@ -26,6 +26,17 @@ public struct ParakeetTranscriber: AudioTranscribing {
         self.onAudio = onAudio
     }
 
+    public func warmUp() async {
+        let started = ContinuousClock.now
+        Log.write("parakeet: warming up…")
+        do {
+            try await StreamingEouAsrManager(chunkSize: .ms160).loadModels()
+            Log.write("parakeet: warm in \(ContinuousClock.now - started)")
+        } catch {
+            Log.write("parakeet: FAILED to warm — \(error)")
+        }
+    }
+
     public func utterances(
         from source: @escaping @Sendable () -> AsyncStream<AVAudioPCMBuffer>
     ) -> AsyncStream<Utterance> {

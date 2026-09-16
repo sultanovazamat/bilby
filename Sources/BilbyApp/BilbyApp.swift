@@ -99,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.placeAtBottom()
         self.panel = panel
         refreshSources()
+        warmUp(engine)
         // Keeps the menu honest without the user pressing Refresh.
         refresher = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             Task { @MainActor in
@@ -113,7 +114,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.engine = engine
         Log.write("app: engine — \(engine.rawValue)")
         stop()
+        warmUp(engine)
         if wasListening, let first = sources.first { listen(to: first) }
+    }
+
+    /// Loads the chosen engine's models in the background, so pressing play
+    /// opens the audio tap immediately instead of fifty seconds later.
+    private func warmUp(_ engine: Engine) {
+        let transcriber = Self.transcriber(for: engine, counting: diagnostics)
+        Task.detached { await transcriber.warmUp() }
+    }
+
+    static func transcriber(for engine: Engine, counting diagnostics: Diagnostics) -> any AudioTranscribing {
+        switch engine {
+        case .apple: AppleTranscriber(onAudio: { diagnostics.audio($0) })
+        case .parakeet: ParakeetTranscriber(onAudio: { diagnostics.audio($0) })
+        case .unified: UnifiedTranscriber(onAudio: { diagnostics.audio($0) })
+        }
     }
 
     func refreshSources() {
@@ -173,11 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     + Double((elapsed - spokenAt).components.attoseconds) / 1e18
                 return String(format: "%.2fs", seconds)
             }
-            let transcriber: any AudioTranscribing = switch chosen {
-            case .apple: AppleTranscriber(onAudio: { counter.audio($0) })
-            case .parakeet: ParakeetTranscriber(onAudio: { counter.audio($0) })
-            case .unified: UnifiedTranscriber(onAudio: { counter.audio($0) })
-            }
+            let transcriber = Self.transcriber(for: chosen, counting: counter)
             let utterances = transcriber.utterances(from: audio)
             var firstWords: String?
             _ = firstWords
