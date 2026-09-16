@@ -18,6 +18,9 @@ struct BilbyApp: App {
             Button(delegate.playTitle) { delegate.togglePlayback() }
                 .keyboardShortcut("p")
 
+            // Never leave the user staring at an empty bar wondering.
+            Text(delegate.diagnosticLine)
+
             if delegate.isListening {
                 Button(delegate.isHidden ? "Show captions" : "Hide captions") {
                     delegate.toggleCaptions()
@@ -53,11 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var isListening = false
     private(set) var isHidden = false
     private(set) var sources: [AudioProcess] = []
+    private(set) var diagnosticLine = "Idle"
 
     @ObservationIgnored private let model = CaptionModel()
     @ObservationIgnored private var panel: CaptionPanel?
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private var refresher: Timer?
+    @ObservationIgnored private let diagnostics = Diagnostics()
 
     /// Names what pressing it will do, the way a player does.
     var playTitle: String {
@@ -72,8 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.panel = panel
         refreshSources()
         // Keeps the menu honest without the user pressing Refresh.
-        refresher = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
-            Task { @MainActor in self.refreshSources() }
+        refresher = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            Task { @MainActor in
+                self.refreshSources()
+                self.diagnosticLine = self.isListening ? self.diagnostics.summary : "Idle"
+            }
         }
     }
 
@@ -109,13 +117,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func start(audio: @escaping @Sendable () -> AsyncStream<AVAudioPCMBuffer>) {
         stop()
+        diagnostics.reset()
         isListening = true
         isHidden = false
         panel?.orderFrontRegardless()
+
+        let counter = diagnostics
         running = Task {
-            let utterances = AppleTranscriber().utterances(from: audio)
+            let transcriber = AppleTranscriber(onAudio: { counter.audio($0) })
+            let utterances = transcriber.utterances(from: audio)
             let session = CaptionSession(translator: AppleTranslator(), target: Language("ru"))
             for await event in session.events(from: utterances) {
+                switch event {
+                case .live: diagnostics.heardSomething()
+                case .line: diagnostics.committedLine()
+                case .translated: break
+                }
                 model.apply(event)
                 panel?.fitContent()
             }

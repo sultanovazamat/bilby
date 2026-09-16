@@ -1,15 +1,33 @@
 @preconcurrency import AVFoundation
 import AudioToolbox
 import CoreAudio
+import AppKit
 import Foundation
 
 /// An app that is currently playing sound.
 public struct AudioProcess: Sendable, Identifiable, Hashable {
     public let id: AudioObjectID
     public let bundleID: String
+    public let pid: pid_t
 
+    /// Browsers play audio from a helper process, so the bundle id ends in
+    /// something like "com.google.Chrome.helper" — the last component is the
+    /// least useful part of it. Ask the system for the real name first, then
+    /// fall back to the last component that is not boilerplate.
     public var name: String {
-        bundleID.split(separator: ".").last.map(String.init) ?? bundleID
+        if let running = NSRunningApplication(processIdentifier: pid),
+           let localized = running.localizedName {
+            return localized
+        }
+        let boilerplate: Set<String> = [
+            "helper", "plugin", "renderer", "gpu", "audio", "service",
+            "framework", "app", "xpc",
+        ]
+        let meaningful = bundleID
+            .split(separator: ".")
+            .map(String.init)
+            .filter { !boilerplate.contains($0.lowercased()) }
+        return meaningful.last ?? bundleID
     }
 }
 
@@ -32,7 +50,11 @@ public final class SystemAudioTap: @unchecked Sendable {
             .compactMap { object in
                 guard let bundleID = property(object, kAudioProcessPropertyBundleID, as: CFString.self)
                 else { return nil }
-                return AudioProcess(id: object, bundleID: bundleID as String)
+                return AudioProcess(
+                    id: object,
+                    bundleID: bundleID as String,
+                    pid: property(object, kAudioProcessPropertyPID, as: pid_t.self) ?? -1
+                )
             }
     }
 

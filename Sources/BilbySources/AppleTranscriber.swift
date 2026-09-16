@@ -15,8 +15,18 @@ import Speech
 /// and buy worse text.
 public struct AppleTranscriber: Sendable {
     private let locale: Locale
+    /// Called with each buffer's frame count. Lets the app tell "no audio
+    /// arrived" apart from "audio arrived but nothing was recognised" — the
+    /// two look identical on an empty caption bar.
+    private let onAudio: (@Sendable (Int) -> Void)?
 
-    public init(locale: Locale = Locale(identifier: "en_US")) { self.locale = locale }
+    public init(
+        locale: Locale = Locale(identifier: "en_US"),
+        onAudio: (@Sendable (Int) -> Void)? = nil
+    ) {
+        self.locale = locale
+        self.onAudio = onAudio
+    }
 
     /// Takes a factory rather than a stream: a stream of non-Sendable buffers
     /// cannot cross an isolation boundary, so it is created inside the task
@@ -59,6 +69,7 @@ public struct AppleTranscriber: Sendable {
 
                 var converter: AVAudioConverter?
                 for await buffer in source() {
+                    onAudio?(Int(buffer.frameLength))
                     guard let converted = convert(buffer, to: format, using: &converter) else { continue }
                     feed.yield(AnalyzerInput(buffer: converted))
                 }
