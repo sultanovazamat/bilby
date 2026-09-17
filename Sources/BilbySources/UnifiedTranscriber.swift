@@ -17,47 +17,23 @@ import Foundation
 /// in another language.
 public struct UnifiedTranscriber: AudioTranscribing {
 
-    /// How far ahead the model listens before committing a word.
-    ///
-    /// Latency is geometry, not compute: (chunk + right) × 80 ms. Quantisation
-    /// cannot change it; only a different export can, and NVIDIA ships four.
-    public enum Latency: String, CaseIterable, Sendable {
-        case ms320, ms640, ms1120, ms2080
-
-        var frames: (chunk: Int, right: Int) {
-            switch self {
-            case .ms320: (2, 2)
-            case .ms640: (7, 1)
-            case .ms1120: (7, 7)
-            case .ms2080: (13, 13)
-            }
-        }
-
-        public var name: String {
-            switch self {
-            case .ms320: "320 ms — fastest"
-            case .ms640: "640 ms"
-            case .ms1120: "1.1 s"
-            case .ms2080: "2.1 s — best accuracy"
-            }
-        }
-    }
-
-    private let latency: Latency
     private let onAudio: (@Sendable (Int) -> Void)?
 
-    public init(latency: Latency = .ms320, onAudio: (@Sendable (Int) -> Void)? = nil) {
-        self.latency = latency
+    public init(onAudio: (@Sendable (Int) -> Void)? = nil) {
         self.onAudio = onAudio
     }
 
+    /// Latency is geometry, not compute: (chunk + right) × 80 ms, baked into
+    /// the CoreML export. NVIDIA ships four windows — 320 ms, 640 ms, 1.1 s and
+    /// 2.1 s — and only the fastest is worth having: the slower ones buy a
+    /// little accuracy with a delay people feel immediately.
     private var config: UnifiedConfig {
-        UnifiedConfig(chunkFrames: latency.frames.chunk, rightFrames: latency.frames.right)
+        UnifiedConfig(chunkFrames: 2, rightFrames: 2)
     }
 
     public func warmUp() async {
         let started = ContinuousClock.now
-        Log.write("asr: warming up \(latency.rawValue)…")
+        Log.write("asr: warming up…")
         do {
             try await StreamingUnifiedAsrManager(config: config).loadModels()
             Log.write("asr: warm in \(ContinuousClock.now - started)")
@@ -77,7 +53,7 @@ public struct UnifiedTranscriber: AudioTranscribing {
 
                 do {
                     try await manager.loadModels()
-                    Log.write("asr: \(latency.rawValue) ready")
+                    Log.write("asr: ready")
                 } catch {
                     Log.write("asr: FAILED to load — \(error)")
                     continuation.finish()

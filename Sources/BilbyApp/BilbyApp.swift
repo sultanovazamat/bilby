@@ -32,20 +32,14 @@ struct BilbyApp: App {
 
             // Two recognisers, switchable on a live call, because the only
             // honest comparison is the same audio through both.
-            // Latency is the only real choice left: the same model ships four
-            // look-ahead windows, and accuracy rises with the wait.
-            Menu("Delay — \(delegate.latency.name)") {
-                ForEach(UnifiedTranscriber.Latency.allCases, id: \.self) { latency in
-                    Button(latency.name) { delegate.use(latency) }
-                }
-            }
-
             Menu("Listen to") {
                 ForEach(delegate.sources) { source in
-                    Button(source.name) { delegate.listen(to: source) }
+                    Button(source.isPlaying ? "\(source.name) ▸ playing" : source.name) {
+                        delegate.listen(to: source)
+                    }
                 }
                 if delegate.sources.isEmpty {
-                    Text("Nothing is playing")
+                    Text("No apps that play audio")
                 }
                 Divider()
                 Button("Refresh") { delegate.refreshSources() }
@@ -63,7 +57,6 @@ struct BilbyApp: App {
 @MainActor
 @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private(set) var latency: UnifiedTranscriber.Latency = .ms320
     private(set) var isListening = false
     private(set) var isHidden = false
     private(set) var sources: [AudioProcess] = []
@@ -78,8 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Names what pressing it will do, the way a player does.
     var playTitle: String {
         if isListening { return "Pause" }
-        if let first = sources.first { return "Listen to \(first.name)" }
-        return "Nothing is playing"
+        if let first = sources.first(where: \.isPlaying) ?? sources.first {
+            return "Listen to \(first.name)"
+        }
+        return "No apps that play audio"
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -89,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.placeAtBottom()
         self.panel = panel
         refreshSources()
-        warmUp(latency)
+        warmUp()
         // Keeps the menu honest without the user pressing Refresh.
         refresher = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             Task { @MainActor in
@@ -99,26 +94,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func use(_ latency: UnifiedTranscriber.Latency) {
-        let wasListening = isListening
-        self.latency = latency
-        Log.write("app: delay — \(latency.rawValue)")
-        stop()
-        warmUp(latency)
-        if wasListening, let first = sources.first { listen(to: first) }
-    }
-
     /// Loads the chosen engine's models in the background, so pressing play
     /// opens the audio tap immediately instead of fifty seconds later.
-    private func warmUp(_ latency: UnifiedTranscriber.Latency) {
-        let transcriber = UnifiedTranscriber(latency: latency, onAudio: { [diagnostics] in
-            diagnostics.audio($0)
-        })
+    private func warmUp() {
+        let transcriber = UnifiedTranscriber(onAudio: { [diagnostics] in diagnostics.audio($0) })
         Task.detached { await transcriber.warmUp() }
     }
 
     func refreshSources() {
-        let found = SystemAudioTap.playing()
+        let found = SystemAudioTap.candidates()
         if found.map(\.bundleID) != sources.map(\.bundleID) {
             Log.write("app: playing — \(found.map { "\($0.name) [\($0.bundleID)] pid \($0.pid)" })")
         }
@@ -126,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func togglePlayback() {
-        if isListening { stop() } else if let first = sources.first { listen(to: first) }
+        if isListening { stop() } else if let first = sources.first(where: \.isPlaying) ?? sources.first { listen(to: first) }
     }
 
     func listen(to source: AudioProcess) {
@@ -163,7 +147,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.orderFrontRegardless()
 
         let counter = diagnostics
-        let chosen = latency
         running = Task {
             // Wall clock against the audio clock: `line.at` is when the words
             // were spoken, so the difference is what the user actually waits.
@@ -174,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     + Double((elapsed - spokenAt).components.attoseconds) / 1e18
                 return String(format: "%.2fs", seconds)
             }
-            let transcriber = UnifiedTranscriber(latency: chosen, onAudio: { counter.audio($0) })
+            let transcriber = UnifiedTranscriber(onAudio: { counter.audio($0) })
             let utterances = transcriber.utterances(from: audio)
             var firstWords: String?
             _ = firstWords

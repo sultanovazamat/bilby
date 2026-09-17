@@ -10,6 +10,10 @@ public struct AudioProcess: Sendable, Identifiable, Hashable {
     public let id: AudioObjectID
     public let bundleID: String
     public let pid: pid_t
+    /// Whether it is making sound right now. Apps are listed either way —
+    /// having to start a video before the app you want appears in the menu is
+    /// backwards.
+    public let isPlaying: Bool
 
     /// Browsers play audio from a helper process, so the bundle id ends in
     /// something like "com.google.Chrome.helper" — the last component is the
@@ -60,19 +64,29 @@ public final class SystemAudioTap: @unchecked Sendable {
         return printable ? "\(status) '\(characters)'" : "\(status)"
     }
 
-    /// Apps making sound right now.
-    public static func playing() -> [AudioProcess] {
+    /// Apps that can play sound, whichever are making it at the moment.
+    ///
+    /// Listing only what is audible meant the meeting app appeared in the menu
+    /// only after someone had already started talking.
+    public static func candidates() -> [AudioProcess] {
         objects(of: kAudioHardwarePropertyProcessObjectList, on: AudioObjectID(kAudioObjectSystemObject))
-            .filter { property($0, kAudioProcessPropertyIsRunningOutput, as: UInt32.self) == 1 }
-            .compactMap { object in
+            .compactMap { object -> AudioProcess? in
                 guard let bundleID = property(object, kAudioProcessPropertyBundleID, as: CFString.self)
                 else { return nil }
+                let pid = property(object, kAudioProcessPropertyPID, as: pid_t.self) ?? -1
+                // Skip background daemons: if it has no visible application it
+                // is not something anyone means to listen to.
+                guard let app = NSRunningApplication(processIdentifier: pid),
+                      app.activationPolicy == .regular else { return nil }
                 return AudioProcess(
                     id: object,
                     bundleID: bundleID as String,
-                    pid: property(object, kAudioProcessPropertyPID, as: pid_t.self) ?? -1
+                    pid: pid,
+                    isPlaying: property(object, kAudioProcessPropertyIsRunningOutput, as: UInt32.self) == 1
                 )
             }
+            // Whatever is audible first, then the rest by name.
+            .sorted { ($0.isPlaying ? 0 : 1, $0.name) < ($1.isPlaying ? 0 : 1, $1.name) }
     }
 
     /// Streams what the given processes are playing.

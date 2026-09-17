@@ -3,7 +3,12 @@ import PackageDescription
 
 let package = Package(
     name: "Bilby",
-    // SpeechAnalyzer and FoundationModels are macOS 26 only.
+    // macOS 26 is set by the translator, not the recogniser. Recognition needs
+    // only 14.4 (Core Audio process taps), but
+    // `TranslationSession(installedSource:target:)` — the one that works
+    // outside SwiftUI — is 26-only. Supporting 15 means going back to the
+    // view-bound `.translationTask` path for every translation, not just the
+    // one-time language download.
     platforms: [.macOS("26.0")],
     products: [
         .library(name: "BilbyCore", targets: ["BilbyCore"]),
