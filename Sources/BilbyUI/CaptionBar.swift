@@ -14,6 +14,10 @@ public struct CaptionBar: View {
     private let model: CaptionModel
     @State private var appeared = false
 
+    /// One type size for both lines. The only thing separating them is
+    /// colour — the source dimmer, the translation at full strength.
+    private static let line = Font.system(size: 23, weight: .medium, design: .rounded)
+
     public init(model: CaptionModel) { self.model = model }
 
     private var isEmpty: Bool {
@@ -33,18 +37,21 @@ public struct CaptionBar: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             if !model.live.isEmpty {
+                // Same size and weight as the translation: people read both,
+                // and shrinking the source turned it into decoration.
                 Text(model.live)
-                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .font(Self.line)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.head)
+                    .fixedSize(horizontal: false, vertical: true)
                     .contentTransition(.interpolate)
                     .transition(.opacity)
             }
 
             if let translation {
                 Text(translation.text)
-                    .font(.system(size: 23, weight: .medium, design: .rounded))
+                    .font(Self.line)
                     .foregroundStyle(translation.settled ? .primary : .secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
