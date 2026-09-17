@@ -13,42 +13,39 @@ struct BilbyApp: App {
     var body: some Scene {
         // The icon is the state: a bubble when idle, a waveform when listening.
         MenuBarExtra("Bilby", systemImage: delegate.isListening ? "waveform" : "captions.bubble") {
-            // One obvious control, like a player. It picks the app that is
-            // making sound, so the common case needs no decision at all.
+            // Enumerating Core Audio processes is not free, and warming the
+            // model costs seconds. Both happen when the menu opens — the only
+            // moment the list has to be right and the user is about to act.
+            Color.clear.frame(height: 0).onAppear { delegate.menuOpened() }
+
             Button(delegate.playTitle) { delegate.togglePlayback() }
                 .keyboardShortcut("p")
 
-            // Never leave the user staring at an empty bar wondering.
-            Text(delegate.diagnosticLine)
-
-            if delegate.isListening {
-                Button(delegate.isHidden ? "Show captions" : "Hide captions") {
-                    delegate.toggleCaptions()
-                }
-                .keyboardShortcut("c", modifiers: [.option, .command])
-            }
+            // Only speak up when something is wrong. A running app should not
+            // narrate itself.
+            if let problem = delegate.problem { Text(problem) }
 
             Divider()
 
-            // Two recognisers, switchable on a live call, because the only
-            // honest comparison is the same audio through both.
             Menu("Listen to") {
                 ForEach(delegate.sources) { source in
                     Button {
                         delegate.listen(to: source)
                     } label: {
-                        // The icon is how you recognise an app; the name is how
-                        // you confirm it.
                         if let icon = source.icon { Image(nsImage: icon) }
                         Text(source.isPlaying ? "\(source.name) — playing" : source.name)
                     }
                 }
-                if delegate.sources.isEmpty {
-                    Text("No apps that play audio")
+                if delegate.sources.isEmpty { Text("No apps have played audio yet") }
+            }
+
+            Menu("Translate to") {
+                ForEach(delegate.languages) { language in
+                    Button(language.isInstalled ? language.name : "\(language.name) — download") {
+                        delegate.translate(into: language)
+                    }
                 }
-                Divider()
-                Button("Refresh") { delegate.refreshSources() }
-                Button("Test audio file") { delegate.playTestAudio() }
+                if delegate.languages.isEmpty { Text("Loading…") }
             }
 
             Divider()
@@ -65,8 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var isListening = false
     private(set) var isHidden = false
     private(set) var sources: [AudioApp] = []
-    private(set) var diagnosticLine = "Idle"
+    private(set) var languages: [Languages.Entry] = []
+    private(set) var target = Language("ru")
     @ObservationIgnored private var isWarm = false
+    @ObservationIgnored private var listening: AudioApp?
 
     @ObservationIgnored private let model = CaptionModel()
     @ObservationIgnored private var panel: CaptionPanel?
@@ -103,13 +102,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 400 MB every login, before anyone had asked for anything.
     func menuOpened() {
         refreshSources()
+        Task { languages = await Languages.available() }
         guard !isWarm else { return }
         isWarm = true
         warmUp()
     }
 
+    /// Shown only when the pipeline is stuck, so the menu stays quiet when
+    /// everything works.
+    var problem: String? {
+        guard isListening else { return nil }
+        let summary = diagnostics.summary
+        return summary.hasPrefix("Audio ") && summary.contains("lines") ? nil : summary
+    }
+
+    func translate(into language: Languages.Entry) {
+        guard language.isInstalled else {
+            Log.write("language: \(language.code) needs downloading")
+            return
+        }
+        target = Language(language.code)
+        Log.write("language: translating into \(language.code)")
+        if isListening, let source = listening { listen(to: source) }
+    }
+
     func refreshSources() {
-        diagnosticLine = isListening ? diagnostics.summary : "Idle"
         let found = SystemAudioTap.candidates()
         if found.map(\.id) != sources.map(\.id) {
             Log.write("app: sources — \(found.map { "\($0.name)\($0.isPlaying ? " ▶︎" : "")" })")
@@ -122,16 +139,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func listen(to app: AudioApp) {
+        listening = app
         Log.write("app: listening to \(app.name) — \(app.processes.count) audio processes")
         let counter = diagnostics
         let tap = SystemAudioTap(onFailure: { counter.failed($0) })
         let processes = app.processes
         start { tap.buffers(of: processes) }
-    }
-
-    func playTestAudio() {
-        let file = AudioFileSource(url: URL(filePath: "/tmp/meeting.aiff"))
-        start { file.buffers() }
     }
 
     func toggleCaptions() {
@@ -155,6 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.orderFrontRegardless()
 
         let counter = diagnostics
+        let chosenTarget = target
         running = Task {
             // Wall clock against the audio clock: `line.at` is when the words
             // were spoken, so the difference is what the user actually waits.
@@ -169,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let utterances = transcriber.utterances(from: audio)
             var firstWords: String?
             _ = firstWords
-            let session = CaptionSession(translator: AppleTranslator(), target: Language("ru"))
+            let session = CaptionSession(translator: AppleTranslator(), target: chosenTarget)
             for await event in session.events(from: utterances) {
                 switch event {
                 case .live(let text):
