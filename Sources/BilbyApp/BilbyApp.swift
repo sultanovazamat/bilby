@@ -12,7 +12,7 @@ struct BilbyApp: App {
 
     var body: some Scene {
         // The icon is the state: a bubble when idle, a waveform when listening.
-        MenuBarExtra("Bilby", systemImage: delegate.isListening ? "waveform" : "captions.bubble") {
+        MenuBarExtra {
             // Enumerating Core Audio processes is not free, and warming the
             // model costs seconds. Both happen when the menu opens — the only
             // moment the list has to be right and the user is about to act.
@@ -50,8 +50,11 @@ struct BilbyApp: App {
 
             Divider()
 
+            Button("Setup…") { delegate.showSetup() }
             Button("Quit Bilby") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
+        } label: {
+            Image(nsImage: BilbyMark.menuBarImage())
         }
     }
 }
@@ -66,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var target = Language("ru")
     @ObservationIgnored private var isWarm = false
     @ObservationIgnored private var listening: AudioApp?
+    @ObservationIgnored private var setup: SetupWindow?
 
     @ObservationIgnored private let model = CaptionModel()
     @ObservationIgnored private var panel: CaptionPanel?
@@ -81,6 +85,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return "No apps that play audio"
     }
 
+    /// Shown once, and reachable afterwards from the menu — the same window
+    /// has to reappear for a language download anyway.
+    func showSetup() {
+        let model = SetupModel(
+            checkAudio: { AudioPermission.isGranted },
+            openSettings: {
+                if let url = AudioPermission.settingsURL { NSWorkspace.shared.open(url) }
+            }
+        )
+        let window = SetupWindow(content: SetupView(model: model) { [weak self] in
+            model.stopWatching()
+            self?.setup?.close()
+            self?.setup = nil
+            UserDefaults.standard.set(true, forKey: "didSetUp")
+        })
+        setup = window
+        window.present()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.start()
         Log.write("app: launched, build \(Bundle.main.bundlePath)")
@@ -88,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.placeAtBottom()
         self.panel = panel
         refreshSources()
+        if !UserDefaults.standard.bool(forKey: "didSetUp") { showSetup() }
     }
 
     /// Loads the chosen engine's models in the background, so pressing play
