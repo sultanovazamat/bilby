@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @ObservationIgnored private var isWarm = false
     @ObservationIgnored private var listening: AudioApp?
     @ObservationIgnored private var setup: SetupWindow?
+    @ObservationIgnored private var setupModel: SetupModel?
 
     @ObservationIgnored private let model = CaptionModel()
     @ObservationIgnored private var panel: CaptionPanel?
@@ -92,8 +93,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             checkAudio: { AudioPermission.isGranted },
             openSettings: {
                 if let url = AudioPermission.settingsURL { NSWorkspace.shared.open(url) }
+            },
+            // The last step listens for real: the app proves itself instead of
+            // describing itself.
+            startListening: { [weak self] in
+                guard let self else { return }
+                refreshSources()
+                if let source = sources.first(where: \.isPlaying) ?? sources.first {
+                    listen(to: source)
+                }
             }
         )
+        setupModel = model
         let window = SetupWindow(content: SetupView(model: model) { [weak self] in
             model.stopWatching()
             self?.setup?.close()
@@ -219,6 +230,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .draft(let text):
                     Log.write("draft — \(text)")
                 case .translated(let id, let text):
+                    // Feed the setup window while it is open, so its empty
+                    // state fills with the user's own audio.
+                    if let line = model.lines.first(where: { $0.id == id }) {
+                        setupModel?.show(line.source, text)
+                    }
                     let spokenAt = model.lines.first { $0.id == id }?.at ?? .zero
                     Log.write("lag \(lag(spokenAt)) to translation — \(text)")
                 }
