@@ -25,10 +25,13 @@ public struct CaptionEngine: Sendable {
 
     public mutating func consume(_ utterance: Utterance) -> [CaptionEvent] {
         var events: [CaptionEvent] = []
-        if !utterance.isFinal { events.append(.live(utterance.text)) }
         for clause in buffer.consume(utterance) {
             events.append(.line(transcript.append(clause)))
         }
+        // The live line is the sentence being spoken — what the buffer has not
+        // closed yet. Showing the utterance itself put the whole session on
+        // screen, because the recogniser reports everything said so far.
+        if !utterance.isFinal { events.append(.live(buffer.pending)) }
         return events
     }
 

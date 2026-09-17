@@ -29,25 +29,41 @@ struct Fetch {
             print("Parakeet Unified: FAILED — \(error)")
         }
 
-        // int4 failed to compile for the Neural Engine:
-        //   MILCompilerForANE error … ANECCompile() FAILED
-        // fp16 is the ANE-targeted export per FluidAudio's own notes, and int8
-        // is CPU-only. Try each and report which survives.
-        for precision in [CanaryPrecision.fp16, .int8, .int4] {
-            started = ContinuousClock.now
-            print("\nCanary \(precision.rawValue): loading…")
-            do {
-                let models = try await CanaryModels.downloadAndLoad(precision: precision)
-                print("Canary \(precision.rawValue): ready in \(ContinuousClock.now - started)")
-                let wanted = Set(["en", "ru", "uk", "de", "fr"].map { "<|\($0)|>" })
-                let found = models.tokenizer.vocabulary
-                    .filter { wanted.contains($0.value) }
-                    .sorted { $0.key < $1.key }
-                print("  language tokens: \(found.map { "\($0.value)=\($0.key)" }.joined(separator: ", "))")
-                break
-            } catch {
-                print("Canary \(precision.rawValue): FAILED — \(error)")
-            }
+        // int4 is the only precision on disk: the downloader saw a complete
+        // directory and never fetched fp16 or int8. Retry it first — the ANE
+        // compiler failed while the machine was deep in swap, which may have
+        // been the whole story — then force-download fp16, the ANE-targeted
+        // export, if it fails again.
+        started = ContinuousClock.now
+        print("\nCanary int4 (already on disk): loading…")
+        do {
+            let models = try await CanaryModels.downloadAndLoad(precision: .int4)
+            print("Canary int4: ready in \(ContinuousClock.now - started)")
+            report(models)
+            return
+        } catch {
+            print("Canary int4: FAILED — \(error)")
         }
+
+        started = ContinuousClock.now
+        print("\nCanary fp16 (forcing a fresh download): loading…")
+        do {
+            let directory = try await CanaryModels.download(precision: .fp16, force: true)
+            let models = try CanaryModels.load(from: directory, precision: .fp16)
+            print("Canary fp16: ready in \(ContinuousClock.now - started)")
+            report(models)
+        } catch {
+            print("Canary fp16: FAILED — \(error)")
+        }
+    }
+
+    /// Canary's prompt carries the task. Swapping the target-language token is
+    /// the difference between transcribing English and translating to Russian.
+    private static func report(_ models: CanaryModels) {
+        let wanted = Set(["en", "ru", "uk", "de", "fr"].map { "<|\($0)|>" })
+        let found = models.tokenizer.vocabulary
+            .filter { wanted.contains($0.value) }
+            .sorted { $0.key < $1.key }
+        print("  language tokens: \(found.map { "\($0.value)=\($0.key)" }.joined(separator: ", "))")
     }
 }

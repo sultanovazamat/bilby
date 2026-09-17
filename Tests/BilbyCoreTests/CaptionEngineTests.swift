@@ -11,12 +11,25 @@ struct CaptionEngineTests {
         #expect(events == [.live("we are")])
     }
 
+    /// The recogniser reports everything said since the session began, so the
+    /// live line must show only what has not been turned into a caption yet —
+    /// otherwise the first words of the meeting sit on screen for an hour.
+    @Test("the live line shows only the unfinished sentence")
+    func liveLineDropsWhatIsAlreadyShown() {
+        var engine = CaptionEngine()
+        _ = engine.consume(Utterance("We shipped it. "))
+        let events = engine.consume(Utterance("We shipped it. And then we"))
+        #expect(events == [.live("And then we")])
+    }
+
     @Test("a completed clause becomes a line awaiting translation")
     func commitsClause() {
         var engine = CaptionEngine()
         let events = engine.consume(Utterance("we ship on Friday."))
-        #expect(events.count == 2)
-        #expect(events.first == .live("we ship on Friday."))
+        // The clause closed, so nothing is left being spoken.
+        #expect(events == [.line(Line(id: 0, source: "we ship on Friday.",
+                                      translation: nil, at: .zero)),
+                           .live("")])
         #expect(engine.nextPending?.source == "we ship on Friday.")
     }
 
