@@ -5,35 +5,22 @@ import AppKit
 import BilbyCore
 import Foundation
 
-/// An app that is currently playing sound.
-public struct AudioProcess: Sendable, Identifiable, Hashable {
-    public let id: AudioObjectID
-    public let bundleID: String
-    public let pid: pid_t
-    /// Whether it is making sound right now. Apps are listed either way —
-    /// having to start a video before the app you want appears in the menu is
-    /// backwards.
+/// An app you can listen to, with every audio process it owns.
+///
+/// Browsers and chat apps play through helper processes: the sound from a
+/// YouTube tab comes from `com.google.Chrome.helper`, which has no icon, no
+/// window and no Dock presence. Tapping the parent alone would capture
+/// nothing, so an entry carries every process belonging to the app and the tap
+/// takes them together.
+public struct AudioApp: Sendable, Identifiable, Hashable {
+    public let id: String
+    public let name: String
+    public let processes: [AudioObjectID]
     public let isPlaying: Bool
+    /// The app's icon, for the menu. Absent for processes whose owner has quit.
+    public var icon: NSImage? { pid.flatMap { NSRunningApplication(processIdentifier: $0)?.icon } }
 
-    /// Browsers play audio from a helper process, so the bundle id ends in
-    /// something like "com.google.Chrome.helper" — the last component is the
-    /// least useful part of it. Ask the system for the real name first, then
-    /// fall back to the last component that is not boilerplate.
-    public var name: String {
-        if let running = NSRunningApplication(processIdentifier: pid),
-           let localized = running.localizedName {
-            return localized
-        }
-        let boilerplate: Set<String> = [
-            "helper", "plugin", "renderer", "gpu", "audio", "service",
-            "framework", "app", "xpc",
-        ]
-        let meaningful = bundleID
-            .split(separator: ".")
-            .map(String.init)
-            .filter { !boilerplate.contains($0.lowercased()) }
-        return meaningful.last ?? bundleID
-    }
+    let pid: pid_t?
 }
 
 /// Captures what another app is playing, straight from Core Audio.
@@ -64,30 +51,60 @@ public final class SystemAudioTap: @unchecked Sendable {
         return printable ? "\(status) '\(characters)'" : "\(status)"
     }
 
-    /// Apps that can play sound, whichever are making it at the moment.
+    /// Apps worth offering, each with all of its audio processes.
     ///
-    /// Listing only what is audible meant the meeting app appeared in the menu
-    /// only after someone had already started talking.
-    public static func candidates() -> [AudioProcess] {
-        objects(of: kAudioHardwarePropertyProcessObjectList, on: AudioObjectID(kAudioObjectSystemObject))
-            .compactMap { object -> AudioProcess? in
-                guard let bundleID = property(object, kAudioProcessPropertyBundleID, as: CFString.self)
-                else { return nil }
-                let pid = property(object, kAudioProcessPropertyPID, as: pid_t.self) ?? -1
-                // Skip background daemons: if it has no visible application it
-                // is not something anyone means to listen to.
-                guard let app = NSRunningApplication(processIdentifier: pid),
-                      app.activationPolicy == .regular else { return nil }
-                return AudioProcess(
-                    id: object,
-                    bundleID: bundleID as String,
-                    pid: pid,
-                    isPlaying: property(object, kAudioProcessPropertyIsRunningOutput, as: UInt32.self) == 1
-                )
+    /// Core Audio only knows a process once it has touched audio, so this is
+    /// never "every open app" — measured on one machine, 23 audio processes
+    /// against 5 apps with a Dock icon, and the one actually playing was a
+    /// browser helper with no icon at all.
+    public static func candidates() -> [AudioApp] {
+        var byApp: [String: (name: String, pid: pid_t?, processes: [AudioObjectID], playing: Bool)] = [:]
+
+        for object in objects(of: kAudioHardwarePropertyProcessObjectList,
+                              on: AudioObjectID(kAudioObjectSystemObject)) {
+            guard let bundle = property(object, kAudioProcessPropertyBundleID, as: CFString.self) as String?,
+                  !bundle.isEmpty else { continue }
+            let pid = property(object, kAudioProcessPropertyPID, as: pid_t.self)
+            let playing = property(object, kAudioProcessPropertyIsRunningOutput, as: UInt32.self) == 1
+            let key = family(of: bundle)
+            guard key != Bundle.main.bundleIdentifier else { continue }  // never ourselves
+
+            var entry = byApp[key] ?? (name: key, pid: nil, processes: [], playing: false)
+            entry.processes.append(object)
+            entry.playing = entry.playing || playing
+            // Only an app with a Dock presence names the family. Helpers and
+            // daemons are real audio processes and belong in the tap, but
+            // "Slack Helper" and "Systemsoundserverd" are not things anyone
+            // means to listen to.
+            if let pid, let app = NSRunningApplication(processIdentifier: pid),
+               app.activationPolicy == .regular {
+                entry.pid = pid
+                entry.name = app.localizedName ?? key
             }
-            // Whatever is audible first, then the rest by name.
-            .sorted { ($0.isPlaying ? 0 : 1, $0.name) < ($1.isPlaying ? 0 : 1, $1.name) }
+            byApp[key] = entry
+        }
+
+        return byApp
+            // A family with no Dock app behind it is a daemon, not a choice.
+            .filter { $0.value.pid != nil }
+            .map { key, entry in
+                AudioApp(id: key, name: entry.name, processes: entry.processes,
+                         isPlaying: entry.playing, pid: entry.pid)
+            }
+        // Whatever is audible first, then the rest by name.
+        .sorted { ($0.isPlaying ? 0 : 1, $0.name) < ($1.isPlaying ? 0 : 1, $1.name) }
     }
+
+    /// Collapses `com.google.Chrome.helper` and friends onto `com.google.Chrome`.
+    private static func family(of bundle: String) -> String {
+        let noise: Set<String> = ["helper", "renderer", "gpu", "plugin", "service", "xpc", "framework"]
+        var parts = bundle.split(separator: ".").map(String.init)
+        while let last = parts.last, noise.contains(last.lowercased()) || last.contains(" ") {
+            parts.removeLast()
+        }
+        return parts.count >= 2 ? parts.joined(separator: ".") : bundle
+    }
+
 
     /// Streams what the given processes are playing.
     ///

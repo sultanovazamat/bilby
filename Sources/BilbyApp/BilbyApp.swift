@@ -34,8 +34,13 @@ struct BilbyApp: App {
             // honest comparison is the same audio through both.
             Menu("Listen to") {
                 ForEach(delegate.sources) { source in
-                    Button(source.isPlaying ? "\(source.name) ▸ playing" : source.name) {
+                    Button {
                         delegate.listen(to: source)
+                    } label: {
+                        // The icon is how you recognise an app; the name is how
+                        // you confirm it.
+                        if let icon = source.icon { Image(nsImage: icon) }
+                        Text(source.isPlaying ? "\(source.name) — playing" : source.name)
                     }
                 }
                 if delegate.sources.isEmpty {
@@ -59,7 +64,7 @@ struct BilbyApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var isListening = false
     private(set) var isHidden = false
-    private(set) var sources: [AudioProcess] = []
+    private(set) var sources: [AudioApp] = []
     private(set) var diagnosticLine = "Idle"
 
     @ObservationIgnored private let model = CaptionModel()
@@ -103,8 +108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func refreshSources() {
         let found = SystemAudioTap.candidates()
-        if found.map(\.bundleID) != sources.map(\.bundleID) {
-            Log.write("app: playing — \(found.map { "\($0.name) [\($0.bundleID)] pid \($0.pid)" })")
+        if found.map(\.id) != sources.map(\.id) {
+            Log.write("app: sources — \(found.map { "\($0.name)\($0.isPlaying ? " ▶︎" : "")" })")
         }
         sources = found
     }
@@ -113,12 +118,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isListening { stop() } else if let first = sources.first(where: \.isPlaying) ?? sources.first { listen(to: first) }
     }
 
-    func listen(to source: AudioProcess) {
-        Log.write("app: listening to \(source.name) [\(source.bundleID)] object \(source.id)")
+    func listen(to app: AudioApp) {
+        Log.write("app: listening to \(app.name) — \(app.processes.count) audio processes")
         let counter = diagnostics
         let tap = SystemAudioTap(onFailure: { counter.failed($0) })
-        let id = source.id
-        start { tap.buffers(of: [id]) }
+        let processes = app.processes
+        start { tap.buffers(of: processes) }
     }
 
     func playTestAudio() {
