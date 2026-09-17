@@ -66,11 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var isHidden = false
     private(set) var sources: [AudioApp] = []
     private(set) var diagnosticLine = "Idle"
+    @ObservationIgnored private var isWarm = false
 
     @ObservationIgnored private let model = CaptionModel()
     @ObservationIgnored private var panel: CaptionPanel?
     @ObservationIgnored private var running: Task<Void, Never>?
-    @ObservationIgnored private var refresher: Timer?
     @ObservationIgnored private let diagnostics = Diagnostics()
 
     /// Names what pressing it will do, the way a player does.
@@ -89,14 +89,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.placeAtBottom()
         self.panel = panel
         refreshSources()
-        warmUp()
-        // Keeps the menu honest without the user pressing Refresh.
-        refresher = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            Task { @MainActor in
-                self.refreshSources()
-                self.diagnosticLine = self.isListening ? self.diagnostics.summary : "Idle"
-            }
-        }
     }
 
     /// Loads the chosen engine's models in the background, so pressing play
@@ -106,7 +98,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached { await transcriber.warmUp() }
     }
 
+    /// Opening the menu means the user is about to act, which is the moment
+    /// worth spending on. Warming up at launch cost 14 seconds of CPU and
+    /// 400 MB every login, before anyone had asked for anything.
+    func menuOpened() {
+        refreshSources()
+        guard !isWarm else { return }
+        isWarm = true
+        warmUp()
+    }
+
     func refreshSources() {
+        diagnosticLine = isListening ? diagnostics.summary : "Idle"
         let found = SystemAudioTap.candidates()
         if found.map(\.id) != sources.map(\.id) {
             Log.write("app: sources — \(found.map { "\($0.name)\($0.isPlaying ? " ▶︎" : "")" })")
