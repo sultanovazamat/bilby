@@ -66,11 +66,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var isHidden = false
     private(set) var sources: [AudioApp] = []
     private(set) var languages: [Languages.Entry] = []
-    private(set) var target = Language("ru")
+    private(set) var target = Language(UserDefaults.standard.string(forKey: "targetLanguage") ?? "ru")
     @ObservationIgnored private var isWarm = false
     @ObservationIgnored private var listening: AudioApp?
     @ObservationIgnored private var setup: SetupWindow?
     @ObservationIgnored private var setupModel: SetupModel?
+    @ObservationIgnored private var setupListening: Task<Void, Never>?
 
     @ObservationIgnored private let model = CaptionModel()
     @ObservationIgnored private var panel: CaptionPanel?
@@ -88,7 +89,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Shown once, and reachable afterwards from the menu — the same window
     /// has to reappear for a language download anyway.
-    func showSetup() {
+    func showSetup(languageCode: String? = nil) {
+        if let setup, languageCode == nil {
+            setup.present()
+            return
+        }
+        setup?.close()
         let model = SetupModel(
             checkAudio: { AudioPermission.isGranted },
             openSettings: {
@@ -98,19 +104,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // describing itself.
             startListening: { [weak self] in
                 guard let self else { return }
-                refreshSources()
-                if let source = sources.first(where: \.isPlaying) ?? sources.first {
-                    listen(to: source)
+                setupListening?.cancel()
+                setupListening = Task { [weak self] in
+                    while let self, !Task.isCancelled {
+                        refreshSources()
+                        if let source = sources.first(where: \.isPlaying) {
+                            listen(to: source)
+                            return
+                        }
+                        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                    }
                 }
-            }
+            },
+            loadLanguages: {
+                await Languages.available().map {
+                    SetupModel.LanguageChoice(code: $0.code, name: $0.name, isInstalled: $0.isInstalled)
+                }
+            },
+            selectTarget: { [weak self] code in self?.chooseTarget(code) },
+            selectedLanguageCode: languageCode ?? target.code
         )
         setupModel = model
-        let window = SetupWindow(content: SetupView(model: model) { [weak self] in
-            model.stopWatching()
-            self?.setup?.close()
-            self?.setup = nil
+        let content = SetupView(model: model) { [weak self] in
             UserDefaults.standard.set(true, forKey: "didSetUp")
-        })
+            self?.setup?.close()
+        }
+        .background {
+            SetupLanguageDownload(model: model)
+        }
+        let window = SetupWindow(
+            content: content,
+            onClose: { [weak self] in
+                model.stopWatching()
+                self?.setupListening?.cancel()
+                self?.setupListening = nil
+                self?.setupModel = nil
+                self?.setup = nil
+            })
         setup = window
         window.present()
     }
@@ -153,12 +183,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func translate(into language: Languages.Entry) {
         guard language.isInstalled else {
-            Log.write("language: \(language.code) needs downloading")
+            showSetup(languageCode: language.code)
             return
         }
-        target = Language(language.code)
-        Log.write("language: translating into \(language.code)")
+        chooseTarget(language.code)
         if isListening, let source = listening { listen(to: source) }
+    }
+
+    private func chooseTarget(_ code: String) {
+        target = Language(code)
+        UserDefaults.standard.set(code, forKey: "targetLanguage")
+        Log.write("language: translating into \(code)")
     }
 
     func refreshSources() {
@@ -170,7 +205,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func togglePlayback() {
-        if isListening { stop() } else if let first = sources.first(where: \.isPlaying) ?? sources.first { listen(to: first) }
+        if isListening {
+            stop()
+        } else if let first = sources.first(where: \.isPlaying) ?? sources.first {
+            listen(to: first)
+        }
     }
 
     func listen(to app: AudioApp) {
@@ -210,7 +249,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let started = ContinuousClock.now
             func lag(_ spokenAt: Duration) -> String {
                 let elapsed = ContinuousClock.now - started
-                let seconds = Double((elapsed - spokenAt).components.seconds)
+                let seconds =
+                    Double((elapsed - spokenAt).components.seconds)
                     + Double((elapsed - spokenAt).components.attoseconds) / 1e18
                 return String(format: "%.2fs", seconds)
             }
@@ -241,6 +281,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 model.apply(event)
                 panel?.fitContent()
             }
+        }
+    }
+}
+
+/// Observe request identity inside a View, rather than capturing the initial
+/// nil request while AppKit constructs its hosting window.
+private struct SetupLanguageDownload: View {
+    let model: SetupModel
+
+    var body: some View {
+        if let request = model.preparation {
+            LanguagePreparation(target: request.code) { error in
+                model.completePreparation(request, error: error)
+            }
+            .id(request.id)
         }
     }
 }

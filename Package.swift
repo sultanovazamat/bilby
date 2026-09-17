@@ -30,11 +30,13 @@ let package = Package(
         // see Scripts/check-core-purity.sh.
         .target(name: "BilbyCore"),
         // Apple's frameworks live here and nowhere else.
-        .target(name: "BilbySources", dependencies: ["BilbyCore", .product(name: "FluidAudio", package: "FluidAudio")]),
-        .target(name: "BilbyUI", dependencies: ["BilbyCore"]),
+        .target(
+            name: "BilbySources", dependencies: ["BilbyCore", .product(name: "FluidAudio", package: "FluidAudio")]),
+        .target(name: "BilbyUI", dependencies: ["BilbyCore"], resources: [.process("Resources")]),
         .executableTarget(name: "BilbyApp", dependencies: ["BilbyCore", "BilbySources", "BilbyUI"]),
         .executableTarget(name: "BilbyPreview", dependencies: ["BilbyUI"]),
         .executableTarget(name: "BilbyModels", dependencies: [.product(name: "FluidAudio", package: "FluidAudio")]),
         .testTarget(name: "BilbyCoreTests", dependencies: ["BilbyCore"]),
+        .testTarget(name: "BilbyUITests", dependencies: ["BilbyUI"]),
     ]
 )

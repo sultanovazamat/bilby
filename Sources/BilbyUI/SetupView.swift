@@ -1,94 +1,11 @@
-import BilbyCore
 import SwiftUI
 
-/// First run, shaped by what actually makes onboarding work: prime every
-/// permission before asking, defer everything that can wait, and end on a
-/// meaningful first action rather than a summary.
-///
-/// The last step is the point. Instead of describing what Bilby does, it does
-/// it — the user plays anything with speech and watches captions appear inside
-/// this window. An empty state that fills itself is worth more than three
-/// screens explaining that it would.
-@MainActor
-@Observable
-public final class SetupModel {
-    public enum Step: Int, CaseIterable, Sendable {
-        case welcome, permission, language, tryIt
-
-        var title: String {
-            switch self {
-            case .welcome: "Captions for any call"
-            case .permission: "Let Bilby hear your calls"
-            case .language: "Read in your language"
-            case .tryIt: "Play something"
-            }
-        }
-    }
-
-    public private(set) var step: Step = .welcome
-    public private(set) var hasAudioAccess = false
-    public private(set) var languages: [String] = []
-    public private(set) var caption: (source: String, translation: String)?
-
-    private let checkAudio: @Sendable () -> Bool
-    private let openSettings: () -> Void
-    private let startListening: () -> Void
-    private var poll: Timer?
-
-    public init(
-        checkAudio: @escaping @Sendable () -> Bool,
-        openSettings: @escaping () -> Void,
-        startListening: @escaping () -> Void
-    ) {
-        self.checkAudio = checkAudio
-        self.openSettings = openSettings
-        self.startListening = startListening
-        self.hasAudioAccess = checkAudio()
-    }
-
-    public var canContinue: Bool {
-        step != .tryIt || caption != nil
-    }
-
-    public func advance() {
-        guard let next = Step(rawValue: step.rawValue + 1) else { return }
-        withAnimation(.smooth(duration: 0.3)) { step = next }
-        if next == .permission { watchPermission() }
-        if next == .tryIt { startListening() }
-    }
-
-    public func show(_ source: String, _ translation: String) {
-        withAnimation(.smooth(duration: 0.2)) { caption = (source, translation) }
-    }
-
-    public func requestAudioAccess() {
-        if !checkAudio() { openSettings() }
-    }
-
-    /// Granting happens outside this app, so the only way to notice is to keep
-    /// looking — and then move on without making the user press anything.
-    private func watchPermission() {
-        poll?.invalidate()
-        poll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                let granted = self.checkAudio()
-                guard granted != self.hasAudioAccess else { return }
-                withAnimation(.smooth) { self.hasAudioAccess = granted }
-                if granted, self.step == .permission {
-                    self.poll?.invalidate()
-                    try? await Task.sleep(for: .milliseconds(600))
-                    self.advance()
-                }
-            }
-        }
-    }
-
-    public func stopWatching() { poll?.invalidate(); poll = nil }
-}
-
+/// Four short scenes, ending with real captions. Motion lives in the view so
+/// Reduce Motion applies equally to transitions, progress, and illustrations.
 public struct SetupView: View {
     @Bindable private var model: SetupModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AccessibilityFocusState private var titleFocused: Bool
     private let onFinish: () -> Void
 
     public init(model: SetupModel, onFinish: @escaping () -> Void) {
@@ -98,133 +15,266 @@ public struct SetupView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            header
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            HStack(spacing: 7) {
+                BilbyMark().fill(.primary).frame(width: 22, height: 22)
+                Text("bilby").font(.system(size: 17, weight: .semibold, design: .rounded))
+                Spacer()
+            }
+            .accessibilityElement(children: .combine)
+
+            ZStack(alignment: .top) {
+                scene
+                    .id(model.step)
+                    .transition(
+                        reduceMotion
+                            ? .opacity
+                            : .asymmetric(
+                                insertion: .opacity.combined(with: .offset(x: 24)),
+                                removal: .opacity.combined(with: .offset(x: -16))
+                            ))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.top, 24)
+
             footer
         }
-        .padding(30)
-        .frame(width: 480, height: 420)
+        .padding(.horizontal, 34)
+        .padding(.top, 40)
+        .padding(.bottom, 28)
+        .frame(width: 520, height: 580)
         .background(.background)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.38), value: model.step)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: model.caption?.translation)
+        .task(id: model.step) {
+            titleFocused = true
+            switch model.step {
+            case .permission:
+                // A tap probe can raise the system prompt. Let the explanation
+                // finish appearing before making the first probe.
+                do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
+                await model.watchPermission()
+            case .language:
+                await model.loadLanguages()
+            default: break
+            }
+        }
     }
 
-    private var header: some View {
-        VStack(spacing: 16) {
-            BilbyMark()
-                .fill(.primary)
-                .frame(width: model.step == .welcome ? 68 : 40)
-                .frame(height: model.step == .welcome ? 68 : 40)
-                .animation(.smooth(duration: 0.35), value: model.step)
+    private var scene: some View {
+        VStack(spacing: 18) {
+            // Real screenshots of the real app. A drawn approximation teaches
+            // the shape of an idea; a photograph of the thing teaches where to
+            // click. Bilby has no Dock icon, so knowing where it lives is not
+            // a detail — it is the difference between using it and losing it.
+            Group {
+                if let shot = model.step.screenshot {
+                    Image(shot, bundle: .module)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .strokeBorder(.primary.opacity(0.10), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+                } else {
+                    SetupIllustration(step: model.step, isReady: model.canContinue)
+                }
+            }
+            .frame(height: 152)
+            .accessibilityHidden(true)
 
-            Text(model.step.title)
-                .font(.system(size: 21, weight: .semibold, design: .rounded))
-                .contentTransition(.opacity)
+            VStack(spacing: 9) {
+                Text(model.step.title)
+                    .font(.system(size: 27, weight: .semibold, design: .rounded))
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityFocused($titleFocused)
+                Text(subtitle)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            content
         }
-        .padding(.bottom, 22)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var subtitle: String {
+        switch model.step {
+        case .welcome: "Bilby lives in the menu bar, with no icon in the Dock.\nClick it whenever you want captions."
+        case .permission: "Bilby needs permission to hear audio from other apps.\nYour microphone is never used."
+        case .language: "Choose the language you’d like to read.\nTranslation happens right here on your Mac."
+        case .tryIt: "Click Bilby in the menu bar, choose what to listen to,\nand captions appear at the bottom of your screen."
+        }
     }
 
     @ViewBuilder private var content: some View {
         switch model.step {
         case .welcome:
-            points([
-                "Hear what any app is playing and read it in your language, live.",
-                "Everything happens on this Mac. Nothing is uploaded.",
-                "Your microphone is never used.",
-            ])
-
+            VStack(alignment: .leading, spacing: 13) {
+                detail("Always in the menu bar, never in the Dock", symbol: "menubar.arrow.up.rectangle")
+                detail("Works with the apps you already use", symbol: "macwindow")
+                detail("Your audio stays on this Mac", symbol: "lock.shield")
+                detail("No account. No microphone.", symbol: "mic.slash")
+            }
+            .padding(.top, 8)
         case .permission:
-            VStack(alignment: .leading, spacing: 18) {
-                points([
-                    "Read what Zoom, Meet or a browser is playing.",
-                    "Caption a video without taking your headphones off.",
-                ])
-                HStack(spacing: 8) {
-                    Image(systemName: model.hasAudioAccess ? "checkmark.circle.fill" : "circle.dotted")
-                        .foregroundStyle(model.hasAudioAccess ? .green : .secondary)
-                    Text(model.hasAudioAccess ? "Allowed — carrying on" : "Waiting for permission…")
-                        .foregroundStyle(model.hasAudioAccess ? .primary : .secondary)
-                }
-                .font(.system(size: 13, weight: .medium))
-            }
-
-        case .language:
-            points([
-                "Captions are translated here, with no account and no network.",
-                "The first language takes about three minutes to arrive.",
-                "You can change it any time from the menu bar.",
-            ])
-
-        case .tryIt:
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Start a video or a call. Captions appear below — and on screen, at the bottom.")
-                    .font(.system(size: 13))
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Allow system audio in the macOS prompt.", systemImage: "speaker.wave.2")
+                Text(
+                    "If access was denied, open System Settings → Privacy & Security → Screen & System Audio Recording and allow Bilby."
+                )
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                Text("No prompt? Play audio in another app. We’ll continue automatically when access is allowed.")
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
-
-                // The empty state fills itself. That is the whole argument for
-                // this app, made in the only way that convinces anyone.
-                VStack(alignment: .leading, spacing: 6) {
-                    if let caption = model.caption {
-                        Text(caption.source)
-                            .font(.system(size: 13, design: .rounded))
-                            .foregroundStyle(.secondary)
-                        Text(caption.translation)
-                            .font(.system(size: 17, weight: .medium, design: .rounded))
-                    } else {
-                        Text("Listening…")
-                            .font(.system(size: 15, design: .rounded))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 74, alignment: .topLeading)
-                .padding(14)
-                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
             }
+            .font(.system(size: 13))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
+        case .language:
+            languageContent
+        case .tryIt:
+            VStack(alignment: .leading, spacing: 8) {
+                Label(
+                    model.caption == nil ? "Listening for your first words" : "Your live captions",
+                    systemImage: "waveform"
+                )
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                if let caption = model.caption {
+                    Text(caption.source)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Text(caption.translation)
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .lineLimit(3)
+                } else {
+                    Text("Try a browser video with speech. Keep its sound on.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
+            .padding(16)
+            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
+            .accessibilityElement(children: .combine)
         }
     }
 
-    private func points(_ lines: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(lines, id: \.self) { line in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Circle().frame(width: 4, height: 4).foregroundStyle(.tertiary)
-                    Text(line).font(.system(size: 13)).foregroundStyle(.secondary)
+    private var languageContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if model.isLoadingLanguages {
+                ProgressView("Finding languages…").controlSize(.small)
+            } else if !model.languages.isEmpty {
+                Picker(
+                    "Translate English into",
+                    selection: Binding(
+                        get: { model.selectedLanguageCode },
+                        set: { model.selectLanguage($0) }
+                    )
+                ) {
+                    ForEach(model.languages) { language in
+                        Text(language.isInstalled ? "\(language.name) — ready" : language.name)
+                            .tag(language.code)
+                    }
                 }
+                .pickerStyle(.menu)
+                .disabled(model.preparation != nil)
+            }
+
+            if model.preparation != nil {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Preparing your language…").font(.system(size: 13))
+                    Spacer()
+                    Button("Cancel") { model.cancelPreparation() }.font(.system(size: 12))
+                }
+                Text("Confirm the macOS download sheet. The first download may take a few minutes.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+            } else if let error = model.languageError {
+                Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
+            } else {
+                Label(
+                    model.canContinue
+                        ? "Ready for offline translation" : "One download, then you can translate offline.",
+                    systemImage: model.canContinue ? "checkmark.circle.fill" : "arrow.down.circle"
+                )
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
             }
         }
+        .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
+        .padding(16)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func detail(_ text: String, symbol: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.system(size: 13))
+            .foregroundStyle(.secondary)
     }
 
     private var footer: some View {
         HStack {
-            // Where you are, without a word about it.
             HStack(spacing: 6) {
                 ForEach(SetupModel.Step.allCases, id: \.self) { step in
-                    Circle()
-                        .frame(width: 5, height: 5)
-                        .foregroundStyle(step == model.step ? .primary : .quaternary)
+                    Capsule()
+                        .fill(step.rawValue <= model.step.rawValue ? Color.primary : Color.primary.opacity(0.12))
+                        .frame(width: step == model.step ? 20 : 6, height: 6)
                 }
             }
-
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Step \(model.step.rawValue + 1) of 4")
             Spacer()
-
-            if model.step == .permission, !model.hasAudioAccess {
-                Button("Open Settings") { model.requestAudioAccess() }
-            }
-
-            Button(continueTitle) {
-                if model.step == .tryIt { onFinish() } else { model.advance() }
-            }
-            .keyboardShortcut(.defaultAction)
-            .disabled(model.step == .tryIt && !model.canContinue)
+            Button(actionTitle, action: performAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
+                .disabled(actionDisabled)
         }
-        .padding(.top, 20)
+        .padding(.top, 18)
     }
 
-    private var continueTitle: String {
+    private var actionTitle: String {
         switch model.step {
-        case .welcome: "Get started"
-        case .permission where !model.hasAudioAccess: "Skip for now"
-        case .tryIt: "Done"
-        default: "Continue"
+        case .welcome: return "Get started"
+        // A button labelled "Open Settings" that does nothing because
+        // permission is already granted is a broken button. It has to say what
+        // pressing it will do, given the state it is actually in.
+        case .permission: return model.hasAudioAccess ? "Continue" : "Open Settings"
+        case .language:
+            if model.isLoadingLanguages { return "Loading…" }
+            if model.preparation != nil { return "Preparing…" }
+            if model.languages.isEmpty { return "Try again" }
+            if model.canContinue { return "Try live captions" }
+            return model.languageError == nil ? "Download language" : "Retry download"
+        case .tryIt: return "Start using Bilby"
+        }
+    }
+
+    private var actionDisabled: Bool {
+        switch model.step {
+        case .language: model.isLoadingLanguages || model.preparation != nil
+        case .tryIt: !model.canContinue
+        default: false
+        }
+    }
+
+    private func performAction() {
+        switch model.step {
+        case .permission:
+            if model.hasAudioAccess { model.advance() } else { model.requestAudioAccess() }
+        case .language where model.languages.isEmpty:
+            Task { await model.loadLanguages() }
+        case .language where !model.canContinue: model.prepareLanguage()
+        case .tryIt: if model.canContinue { onFinish() }
+        default: model.advance()
         }
     }
 }

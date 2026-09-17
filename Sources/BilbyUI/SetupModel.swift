@@ -1,0 +1,186 @@
+import Foundation
+import Observation
+
+/// First-run state, independent of rendering and the platform permission and
+/// download APIs. Only the permission page may probe access; only a prepared
+/// language can start the live demonstration.
+@MainActor
+@Observable
+public final class SetupModel {
+    public enum Step: Int, CaseIterable, Sendable {
+        case welcome, permission, language, tryIt
+
+        /// Steps that are about where to click show the real thing.
+        var screenshot: String? {
+            switch self {
+            case .welcome: "menu-bar"
+            case .tryIt: "menu-sources"
+            default: nil
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .welcome: "Never lose the thread."
+            case .permission: "Let Bilby listen."
+            case .language: "Make yourself at home."
+            case .tryIt: "Now, hear it your way."
+            }
+        }
+    }
+
+    public struct LanguageChoice: Identifiable, Sendable {
+        public let code: String
+        public let name: String
+        public let isInstalled: Bool
+        public var id: String { code }
+
+        public init(code: String, name: String, isInstalled: Bool) {
+            self.code = code
+            self.name = name
+            self.isInstalled = isInstalled
+        }
+    }
+
+    /// Identity matters: a cancelled download must not complete a later one.
+    public struct Preparation: Identifiable, Equatable, Sendable {
+        public let id = UUID()
+        public let code: String
+    }
+
+    public private(set) var step: Step = .welcome
+    public private(set) var hasAudioAccess = false
+    public private(set) var languages: [LanguageChoice] = []
+    public private(set) var selectedLanguageCode: String
+    public private(set) var isLoadingLanguages = false
+    public private(set) var languageError: String?
+    public private(set) var preparation: Preparation?
+    public private(set) var caption: (source: String, translation: String)?
+
+    private let checkAudio: @Sendable () -> Bool
+    private let openSettings: () -> Void
+    private let startListening: () -> Void
+    private let fetchLanguages: () async -> [LanguageChoice]
+    private let selectTarget: (String) -> Void
+    private var isActive = true
+
+    public init(
+        checkAudio: @escaping @Sendable () -> Bool,
+        openSettings: @escaping () -> Void,
+        startListening: @escaping () -> Void,
+        loadLanguages: @escaping () async -> [LanguageChoice] = { [] },
+        selectTarget: @escaping (String) -> Void = { _ in },
+        selectedLanguageCode: String = "ru"
+    ) {
+        self.checkAudio = checkAudio
+        self.openSettings = openSettings
+        self.startListening = startListening
+        self.fetchLanguages = loadLanguages
+        self.selectTarget = selectTarget
+        self.selectedLanguageCode = selectedLanguageCode
+    }
+
+    public var selectedLanguage: LanguageChoice? {
+        languages.first { $0.code == selectedLanguageCode }
+    }
+
+    public var canContinue: Bool {
+        guard isActive else { return false }
+        switch step {
+        case .welcome: return true
+        case .permission: return hasAudioAccess
+        case .language: return selectedLanguage?.isInstalled == true && preparation == nil
+        case .tryIt: return caption != nil
+        }
+    }
+
+    public func advance() {
+        guard canContinue, let next = Step(rawValue: step.rawValue + 1) else { return }
+        if step == .language { selectTarget(selectedLanguageCode) }
+        step = next
+        if next == .tryIt { startListening() }
+    }
+
+    public func show(_ source: String, _ translation: String) {
+        guard isActive, step == .tryIt, !translation.isEmpty else { return }
+        caption = (source, translation)
+    }
+
+    public func requestAudioAccess() {
+        guard isActive, step == .permission else { return }
+        // Asking and checking are the same act — building a tap is what raises
+        // the prompt. If that did not settle it, send the user to the switch:
+        // being asked and then left on the same screen is the worst outcome.
+        hasAudioAccess = checkAudio()
+        if !hasAudioAccess { openSettings() }
+    }
+
+    /// Owned by the visible page's SwiftUI task, so leaving or closing the
+    /// page cancels polling.
+    ///
+    /// Permission granted before this page opened is shown as granted, not
+    /// skipped past: a step that flashes by teaches nothing, and this is the
+    /// page that says where Bilby lives. Only a grant that happens while the
+    /// user is watching moves them on by itself, because that is the moment
+    /// where waiting for a click would feel obtuse.
+    public func watchPermission() async {
+        let grantedOnArrival = checkAudio()
+        hasAudioAccess = grantedOnArrival
+
+        while isActive, step == .permission, !Task.isCancelled {
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            guard isActive, step == .permission else { return }
+            let granted = checkAudio()
+            guard granted != hasAudioAccess else { continue }
+            hasAudioAccess = granted
+            if granted, !grantedOnArrival { advance() }
+        }
+    }
+
+    public func loadLanguages() async {
+        guard isActive, step == .language, !isLoadingLanguages, languages.isEmpty else { return }
+        isLoadingLanguages = true
+        languageError = nil
+        defer { isLoadingLanguages = false }
+        let entries = await fetchLanguages()
+        guard isActive, step == .language, !Task.isCancelled else { return }
+        languages = entries
+        if selectedLanguage == nil { selectedLanguageCode = entries.first?.code ?? "" }
+        if entries.isEmpty { languageError = "Languages couldn’t be loaded. Try again." }
+    }
+
+    public func selectLanguage(_ code: String) {
+        guard isActive, step == .language, languages.contains(where: { $0.code == code }) else { return }
+        guard code != selectedLanguageCode else { return }
+        preparation = nil
+        languageError = nil
+        selectedLanguageCode = code
+    }
+
+    public func prepareLanguage() {
+        guard isActive, step == .language, let language = selectedLanguage,
+            !language.isInstalled, preparation == nil
+        else { return }
+        languageError = nil
+        preparation = Preparation(code: language.code)
+    }
+
+    public func completePreparation(_ request: Preparation, error: String?) {
+        guard isActive, step == .language, preparation == request else { return }
+        preparation = nil
+        languageError = error
+        guard error == nil else { return }
+        languages = languages.map {
+            $0.code == request.code ? LanguageChoice(code: $0.code, name: $0.name, isInstalled: true) : $0
+        }
+    }
+
+    public func cancelPreparation() {
+        preparation = nil
+    }
+
+    public func stopWatching() {
+        isActive = false
+        preparation = nil
+    }
+}

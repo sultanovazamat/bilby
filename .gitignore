@@ -4,3 +4,4 @@ DerivedData/
 *.xcuserstate
 .DS_Store
 Spike/.build/
+Assets/

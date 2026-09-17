@@ -16,13 +16,13 @@ import Foundation
 public enum AudioPermission: Sendable {
     /// Opens Privacy & Security at the pane that holds this switch.
     public static let settingsURL = URL(
-        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
     )
 
     public static var isGranted: Bool {
         guard let victim = SystemAudioTap.candidates().first?.processes.first else {
             // Nothing to tap yet says nothing about permission.
-            return true
+            return false
         }
         let description = CATapDescription(stereoMixdownOfProcesses: [victim])
         description.uuid = UUID()
