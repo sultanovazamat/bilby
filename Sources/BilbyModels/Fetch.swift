@@ -29,29 +29,25 @@ struct Fetch {
             print("Parakeet Unified: FAILED — \(error)")
         }
 
-        started = ContinuousClock.now
-        print("Canary 1B v2 (int4): loading…")
-        let canary: CanaryModels
-        do {
-            canary = try await CanaryModels.downloadAndLoad()
-            print("Canary: ready in \(ContinuousClock.now - started)")
-        } catch {
-            print("Canary: FAILED — \(error)")
-            return
-        }
-
-        // Canary's prompt carries the task: source language, target language,
-        // punctuation. Translating instead of transcribing is one token.
-        let vocabulary = canary.tokenizer.vocabulary
-        let wanted = Set(["en", "ru", "uk", "de", "fr", "es", "pl", "tr"].map { "<|\($0)|>" })
-        print("\nlanguage tokens in the vocabulary:")
-        for (id, token) in vocabulary.sorted(by: { $0.key < $1.key }) where wanted.contains(token) {
-            print("  \(token) = \(id)")
-        }
-        print("\nevery task-ish special token:")
-        for (id, token) in vocabulary.sorted(by: { $0.key < $1.key })
-        where token.hasPrefix("<|") && token.count <= 14 {
-            print("  \(id)\t\(token)")
+        // int4 failed to compile for the Neural Engine:
+        //   MILCompilerForANE error … ANECCompile() FAILED
+        // fp16 is the ANE-targeted export per FluidAudio's own notes, and int8
+        // is CPU-only. Try each and report which survives.
+        for precision in [CanaryPrecision.fp16, .int8, .int4] {
+            started = ContinuousClock.now
+            print("\nCanary \(precision.rawValue): loading…")
+            do {
+                let models = try await CanaryModels.downloadAndLoad(precision: precision)
+                print("Canary \(precision.rawValue): ready in \(ContinuousClock.now - started)")
+                let wanted = Set(["en", "ru", "uk", "de", "fr"].map { "<|\($0)|>" })
+                let found = models.tokenizer.vocabulary
+                    .filter { wanted.contains($0.value) }
+                    .sorted { $0.key < $1.key }
+                print("  language tokens: \(found.map { "\($0.value)=\($0.key)" }.joined(separator: ", "))")
+                break
+            } catch {
+                print("Canary \(precision.rawValue): FAILED — \(error)")
+            }
         }
     }
 }

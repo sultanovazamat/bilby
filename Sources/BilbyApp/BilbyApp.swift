@@ -32,9 +32,11 @@ struct BilbyApp: App {
 
             // Two recognisers, switchable on a live call, because the only
             // honest comparison is the same audio through both.
-            Menu("Engine — \(delegate.engine.name)") {
-                ForEach(Engine.allCases, id: \.self) { engine in
-                    Button(engine.name) { delegate.use(engine) }
+            // Latency is the only real choice left: the same model ships four
+            // look-ahead windows, and accuracy rises with the wait.
+            Menu("Delay — \(delegate.latency.name)") {
+                ForEach(UnifiedTranscriber.Latency.allCases, id: \.self) { latency in
+                    Button(latency.name) { delegate.use(latency) }
                 }
             }
 
@@ -58,22 +60,10 @@ struct BilbyApp: App {
     }
 }
 
-enum Engine: String, CaseIterable, Sendable {
-    case apple, parakeet, unified
-
-    var name: String {
-        switch self {
-        case .apple: "Apple — 3.6s bursts, punctuated"
-        case .parakeet: "Parakeet EOU — 160ms, no punctuation"
-        case .unified: "Parakeet Unified — ~1s, punctuated"
-        }
-    }
-}
-
 @MainActor
 @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private(set) var engine: Engine = .unified
+    private(set) var latency: UnifiedTranscriber.Latency = .ms320
     private(set) var isListening = false
     private(set) var isHidden = false
     private(set) var sources: [AudioProcess] = []
@@ -99,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.placeAtBottom()
         self.panel = panel
         refreshSources()
-        warmUp(engine)
+        warmUp(latency)
         // Keeps the menu honest without the user pressing Refresh.
         refresher = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             Task { @MainActor in
@@ -109,28 +99,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func use(_ engine: Engine) {
+    func use(_ latency: UnifiedTranscriber.Latency) {
         let wasListening = isListening
-        self.engine = engine
-        Log.write("app: engine — \(engine.rawValue)")
+        self.latency = latency
+        Log.write("app: delay — \(latency.rawValue)")
         stop()
-        warmUp(engine)
+        warmUp(latency)
         if wasListening, let first = sources.first { listen(to: first) }
     }
 
     /// Loads the chosen engine's models in the background, so pressing play
     /// opens the audio tap immediately instead of fifty seconds later.
-    private func warmUp(_ engine: Engine) {
-        let transcriber = Self.transcriber(for: engine, counting: diagnostics)
+    private func warmUp(_ latency: UnifiedTranscriber.Latency) {
+        let transcriber = UnifiedTranscriber(latency: latency, onAudio: { [diagnostics] in
+            diagnostics.audio($0)
+        })
         Task.detached { await transcriber.warmUp() }
-    }
-
-    static func transcriber(for engine: Engine, counting diagnostics: Diagnostics) -> any AudioTranscribing {
-        switch engine {
-        case .apple: AppleTranscriber(onAudio: { diagnostics.audio($0) })
-        case .parakeet: ParakeetTranscriber(onAudio: { diagnostics.audio($0) })
-        case .unified: UnifiedTranscriber(onAudio: { diagnostics.audio($0) })
-        }
     }
 
     func refreshSources() {
@@ -179,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.orderFrontRegardless()
 
         let counter = diagnostics
-        let chosen = engine
+        let chosen = latency
         running = Task {
             // Wall clock against the audio clock: `line.at` is when the words
             // were spoken, so the difference is what the user actually waits.
@@ -190,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     + Double((elapsed - spokenAt).components.attoseconds) / 1e18
                 return String(format: "%.2fs", seconds)
             }
-            let transcriber = Self.transcriber(for: chosen, counting: counter)
+            let transcriber = UnifiedTranscriber(latency: chosen, onAudio: { counter.audio($0) })
             let utterances = transcriber.utterances(from: audio)
             var firstWords: String?
             _ = firstWords

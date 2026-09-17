@@ -1,6 +1,6 @@
 import Foundation
 
-/// Both Parakeet engines report the whole session transcript on every update,
+/// Parakeet reports the whole session transcript on every update,
 /// not the current sentence. This subtracts what is already closed, so the core
 /// sees one utterance at a time instead of an ever-growing monologue.
 final class RunningTranscript: @unchecked Sendable {

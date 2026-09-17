@@ -3,32 +3,66 @@ import BilbyCore
 import FluidAudio
 import Foundation
 
-/// Parakeet Unified 0.6B: streaming, and the only engine we have that emits
-/// punctuation and capitals.
+/// Parakeet Unified 0.6B — the recogniser Bilby uses.
 ///
-/// That matters less for how the text looks than for where it can be cut.
-/// Apple's translator works on whole sentences; fed a fragment it produced
-/// "Сделай это снова" — an imperative — from "i knew that i could do it again".
-/// A full stop from the model is a real sentence boundary, which no amount of
-/// timing or word counting can infer.
+/// Chosen for one property: it emits punctuation and capitals while streaming.
+/// That is not about how the text looks. Apple's translator is good on whole
+/// sentences and bad on fragments — given "i knew that i could / do it again"
+/// it produced «Сделай это снова», an imperative — and a full stop from the
+/// model is the only trustworthy sentence boundary. Every substitute we tried
+/// (word counts, pauses, end-of-utterance tokens) either fired at the wrong
+/// place or hardly fired at all.
 ///
-/// The price is latency — about a second against EOU's 160 ms — and English
-/// only. Both are acceptable for the settled line; neither is for the live one.
+/// English only, which costs nothing here: the case is an English meeting read
+/// in another language.
 public struct UnifiedTranscriber: AudioTranscribing {
+
+    /// How far ahead the model listens before committing a word.
+    ///
+    /// Latency is geometry, not compute: (chunk + right) × 80 ms. Quantisation
+    /// cannot change it; only a different export can, and NVIDIA ships four.
+    public enum Latency: String, CaseIterable, Sendable {
+        case ms320, ms640, ms1120, ms2080
+
+        var frames: (chunk: Int, right: Int) {
+            switch self {
+            case .ms320: (2, 2)
+            case .ms640: (7, 1)
+            case .ms1120: (7, 7)
+            case .ms2080: (13, 13)
+            }
+        }
+
+        public var name: String {
+            switch self {
+            case .ms320: "320 ms — fastest"
+            case .ms640: "640 ms"
+            case .ms1120: "1.1 s"
+            case .ms2080: "2.1 s — best accuracy"
+            }
+        }
+    }
+
+    private let latency: Latency
     private let onAudio: (@Sendable (Int) -> Void)?
 
-    public init(onAudio: (@Sendable (Int) -> Void)? = nil) {
+    public init(latency: Latency = .ms320, onAudio: (@Sendable (Int) -> Void)? = nil) {
+        self.latency = latency
         self.onAudio = onAudio
+    }
+
+    private var config: UnifiedConfig {
+        UnifiedConfig(chunkFrames: latency.frames.chunk, rightFrames: latency.frames.right)
     }
 
     public func warmUp() async {
         let started = ContinuousClock.now
-        Log.write("unified: warming up…")
+        Log.write("asr: warming up \(latency.rawValue)…")
         do {
-            try await StreamingUnifiedAsrManager().loadModels()
-            Log.write("unified: warm in \(ContinuousClock.now - started)")
+            try await StreamingUnifiedAsrManager(config: config).loadModels()
+            Log.write("asr: warm in \(ContinuousClock.now - started)")
         } catch {
-            Log.write("unified: FAILED to warm — \(error)")
+            Log.write("asr: FAILED to warm — \(error)")
         }
     }
 
@@ -37,24 +71,22 @@ public struct UnifiedTranscriber: AudioTranscribing {
     ) -> AsyncStream<Utterance> {
         AsyncStream { continuation in
             let task = Task {
-                let manager = StreamingUnifiedAsrManager()
+                let manager = StreamingUnifiedAsrManager(config: config)
                 let clock = AudioClock()
                 let spoken = RunningTranscript()
 
                 do {
-                    Log.write("unified: loading models…")
-                    let started = ContinuousClock.now
                     try await manager.loadModels()
-                    Log.write("unified: ready in \(ContinuousClock.now - started)")
+                    Log.write("asr: \(latency.rawValue) ready")
                 } catch {
-                    Log.write("unified: FAILED to load — \(error)")
+                    Log.write("asr: FAILED to load — \(error)")
                     continuation.finish()
                     return
                 }
 
                 await manager.setPartialTranscriptCallback { text in
                     // No pause detection: this engine punctuates, and its full
-                    // stops are better boundaries than any timing guess.
+                    // stops beat any timing guess.
                     let seen = spoken.observe(text, pause: nil)
                     guard !seen.tail.isEmpty else { return }
                     continuation.yield(Utterance(seen.tail, isFinal: false, at: clock.position))
