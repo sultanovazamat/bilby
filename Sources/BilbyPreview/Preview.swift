@@ -28,42 +28,44 @@ struct Preview {
         try save(MarkSheet(), to: directory.appendingPathComponent("bilby-mark.png"))
         for scheme in [ColorScheme.light, .dark] {
             let appearance = scheme == .light ? "light" : "dark"
-            for step in SetupModel.Step.allCases {
-                let model = SetupModel(
-                    checkAudio: { true }, openSettings: {}, startListening: {},
-                    loadLanguages: {
-                        [
-                            .init(code: "ru", name: "Russian", isInstalled: step == .tryIt),
-                            .init(code: "fr", name: "French", isInstalled: true),
-                        ]
-                    }
-                )
-                if step != .welcome { model.advance() }
-                if step == .language || step == .tryIt {
-                    model.requestAudioAccess()
-                    await model.loadLanguages()
-                }
-                if step == .tryIt { model.advance() }
-                let view = SetupView(model: model, onFinish: {})
-                    .environment(\.colorScheme, scheme)
-                try save(view, to: directory.appendingPathComponent("setup-\(step)-\(appearance).png"))
-                if step == .language {
-                    model.prepareLanguage()
-                    try save(view, to: directory.appendingPathComponent("setup-download-\(appearance).png"))
-                    if let request = model.preparation {
-                        model.completePreparation(
-                            request, error: "The language couldn’t be prepared. Check your connection and try again.")
-                    }
-                    try save(view, to: directory.appendingPathComponent("setup-retry-\(appearance).png"))
-                }
-                if step == .tryIt {
-                    model.show(
-                        "Let’s make sure everyone can follow the conversation.",
-                        "Давайте убедимся, что все могут следить за разговором.")
-                    try save(view, to: directory.appendingPathComponent("setup-caption-\(appearance).png"))
-                }
-                model.stopWatching()
+            func snap(_ model: SetupModel, _ name: String) throws {
+                let view = SetupView(model: model, onFinish: {}).environment(\.colorScheme, scheme)
+                try save(view, to: directory.appendingPathComponent("setup-\(name)-\(appearance).png"))
             }
+            // Walks the real model the way a user would, so every scene is
+            // one the app can actually reach.
+            let model = SetupModel(
+                checkAudio: { true }, openSettings: {}, startListening: {},
+                loadLanguages: {
+                    [
+                        .init(code: "ru", name: "Russian", isInstalled: false),
+                        .init(code: "fr", name: "French", isInstalled: true),
+                    ]
+                }
+            )
+            try snap(model, "welcome")
+            model.advance()
+            model.requestAudioAccess()
+            try snap(model, "permission")
+            model.advance()
+            await model.loadLanguages()
+            try snap(model, "language")
+            model.prepareLanguage()
+            try snap(model, "download")
+            if let request = model.preparation {
+                model.completePreparation(
+                    request, error: "The language couldn’t be prepared. Check your connection and try again.")
+            }
+            try snap(model, "retry")
+            model.prepareLanguage()
+            if let request = model.preparation { model.completePreparation(request, error: nil) }
+            model.advance()
+            try snap(model, "tryIt")
+            model.show(
+                "Let’s make sure everyone can follow the conversation.",
+                "Давайте убедимся, что все могут следить за разговором.")
+            try snap(model, "caption")
+            model.stopWatching()
         }
         print("Wrote previews to \(directory.path)")
     }
@@ -99,6 +101,10 @@ struct Preview {
         window.isReleasedWhenClosed = false
         window.contentView = host
         host.frame = NSRect(origin: .zero, size: size)
+        host.layoutSubtreeIfNeeded()
+        // One turn of the run loop: images and AppKit controls need a display
+        // pass before they are in the cache.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         host.layoutSubtreeIfNeeded()
         guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
             throw CocoaError(.fileWriteUnknown)

@@ -23,8 +23,8 @@ struct SetupModelTests {
         model.stopWatching()
     }
 
-    @Test("an existing audio grant advances without needing a grant change")
-    func existingGrantAdvances() {
+    @Test("an existing audio grant is confirmed on the page, and continues on the next step")
+    func existingGrantIsConfirmed() {
         var openedSettings = false
         let model = SetupModel(
             checkAudio: { true }, openSettings: { openedSettings = true }, startListening: {}
@@ -32,8 +32,10 @@ struct SetupModelTests {
         model.advance()
         model.requestAudioAccess()
         #expect(model.hasAudioAccess)
-        #expect(model.step == .language)
+        #expect(model.step == .permission)
         #expect(!openedSettings)
+        model.advance()
+        #expect(model.step == .language)
         model.stopWatching()
     }
 
@@ -52,12 +54,18 @@ struct SetupModelTests {
         model.stopWatching()
     }
 
-    @Test("showing the permission page automatically advances an existing grant")
-    func existingGrantAdvancesOnAppearance() async {
-        let model = SetupModel(checkAudio: { true }, openSettings: {}, startListening: {})
+    @Test("a grant that exists on arrival is shown as granted, not skipped past")
+    func grantOnArrivalIsConfirmed() async {
+        let model = SetupModel(
+            checkAudio: { true }, openSettings: {}, startListening: {},
+            pollInterval: .milliseconds(1)
+        )
         model.advance()
-        await model.watchPermission()
-        #expect(model.step == .language)
+        let watching = Task { await model.watchPermission() }
+        while !model.hasAudioAccess { await Task.yield() }
+        #expect(model.step == .permission)
+        model.stopWatching()
+        await watching.value
     }
 
     @Test("permission granted later in Settings also advances automatically")

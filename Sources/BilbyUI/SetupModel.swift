@@ -62,6 +62,8 @@ public final class SetupModel {
     private let startListening: () -> Void
     private let fetchLanguages: () async -> [LanguageChoice]
     private let selectTarget: (String) -> Void
+    /// How often the permission page re-checks. Tests shorten it.
+    private let pollInterval: Duration
     private var isActive = true
 
     public init(
@@ -70,7 +72,8 @@ public final class SetupModel {
         startListening: @escaping () -> Void,
         loadLanguages: @escaping () async -> [LanguageChoice] = { [] },
         selectTarget: @escaping (String) -> Void = { _ in },
-        selectedLanguageCode: String = "ru"
+        selectedLanguageCode: String = "ru",
+        pollInterval: Duration = .seconds(1)
     ) {
         self.checkAudio = checkAudio
         self.openSettings = openSettings
@@ -78,6 +81,7 @@ public final class SetupModel {
         self.fetchLanguages = loadLanguages
         self.selectTarget = selectTarget
         self.selectedLanguageCode = selectedLanguageCode
+        self.pollInterval = pollInterval
     }
 
     public var selectedLanguage: LanguageChoice? {
@@ -124,11 +128,13 @@ public final class SetupModel {
     /// user is watching moves them on by itself, because that is the moment
     /// where waiting for a click would feel obtuse.
     public func watchPermission() async {
+        // A closed page must not probe: probing is what raises the prompt.
+        guard isActive, step == .permission else { return }
         let grantedOnArrival = checkAudio()
         hasAudioAccess = grantedOnArrival
 
         while isActive, step == .permission, !Task.isCancelled {
-            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            do { try await Task.sleep(for: pollInterval) } catch { return }
             guard isActive, step == .permission else { return }
             let granted = checkAudio()
             guard granted != hasAudioAccess else { continue }
