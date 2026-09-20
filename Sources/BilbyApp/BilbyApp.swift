@@ -18,17 +18,18 @@ struct BilbyApp: App {
             Color.clear.frame(height: 0).onAppear { delegate.menuOpened() }
             let menu = delegate.menu
 
-            // What is running, before anything asking to change it.
-            if let header = menu.header {
-                Label {
-                    Text(header)
-                } icon: {
-                    if let id = menu.listening?.id, let icon = delegate.icon(for: id) {
-                        Image(nsImage: icon)
-                    }
+            // The state, before anything that asks to change it. Always
+            // present: a line that appears and disappears leaves its absence
+            // to be interpreted.
+            Label {
+                Text(menu.header)
+            } icon: {
+                if let id = menu.listening?.id, let icon = delegate.icon(for: id) {
+                    Image(nsImage: icon)
                 }
-                Divider()
             }
+
+            Divider()
 
             // The only way in. Naming one app on a line of its own meant
             // guessing which of several was meant, and the guess was

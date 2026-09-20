@@ -51,8 +51,8 @@ public struct MenuState: Equatable, Sendable {
     /// The line at the top: what is being captioned, and what it is being
     /// read in. Menus are built once when they open and cannot animate, so
     /// the live signal stays on the menu bar icon; this is the state.
-    public var header: String? {
-        guard let listening else { return nil }
+    public var header: String {
+        guard let listening else { return "Not listening" }
         guard let target, let language = languages.first(where: { $0.code == target })?.name else {
             return listening.name
         }
