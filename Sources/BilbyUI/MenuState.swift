@@ -38,22 +38,15 @@ public struct MenuState: Equatable, Sendable {
 
     public init() {}
 
-    /// What Start would pick: the app making sound, else the last one, else the first.
-    public var candidate: App? {
-        apps.first(where: \.isPlaying) ?? apps.first(where: { $0.id == lastListened?.id }) ?? apps.first
-    }
-
-    public var primaryTitle: String {
-        if let listening { return "Stop Captions for \(listening.name)" }
-        if let candidate { return "Start Captions for \(candidate.name)" }
-        return "No Apps Playing Sound"
-    }
-
-    public var primaryEnabled: Bool { listening != nil || candidate != nil }
-
-    /// A list is worth showing only when there is a choice to make.
-    public var showsListenTo: Bool { apps.count >= 2 }
-    public var checkedApp: String? { listening?.id ?? candidate?.id }
+    /// The app being captioned, and nothing else.
+    ///
+    /// Bilby used to name a single app on the menu's first line and start
+    /// captioning it, guessing between whatever was making sound. The guess
+    /// was alphabetical, so a meeting lost to a browser, and a notification
+    /// chirp arriving as the menu opened could take the line. Choosing from
+    /// the list is one more click and no wrong answers; choosing the checked
+    /// app again stops.
+    public var checkedApp: String? { listening?.id }
 
     public var installedLanguages: [Language] { languages.filter(\.isInstalled) }
     /// Names the direction, not the noun: the submenu under it is a list of

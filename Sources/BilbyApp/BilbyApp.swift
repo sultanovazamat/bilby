@@ -18,32 +18,29 @@ struct BilbyApp: App {
             Color.clear.frame(height: 0).onAppear { delegate.menuOpened() }
             let menu = delegate.menu
 
-            Button(menu.primaryTitle) { delegate.togglePlayback() }
-                .keyboardShortcut("p")
-                .disabled(!menu.primaryEnabled)
+            // The only way in. Naming one app on a line of its own meant
+            // guessing which of several was meant, and the guess was
+            // alphabetical.
+            Menu("Listen to") {
+                ForEach(menu.apps) { app in
+                    Toggle(
+                        isOn: Binding(
+                            get: { menu.checkedApp == app.id }, set: { _ in delegate.chooseApp(app.id) })
+                    ) {
+                        Label {
+                            Text(app.isPlaying ? "\(app.name), playing" : app.name)
+                        } icon: {
+                            if let icon = delegate.icon(for: app.id) { Image(nsImage: icon) }
+                        }
+                    }
+                }
+                if menu.apps.isEmpty { Text("No apps have played audio yet") }
+            }
             // Only speak up when something is wrong. A running app should not
             // narrate itself.
             if let line = menu.statusLine { Text(line) }
 
             Divider()
-
-            // A list is worth showing only when there is a choice to make.
-            if menu.showsListenTo {
-                Menu("Listen To") {
-                    ForEach(menu.apps) { app in
-                        Toggle(
-                            isOn: Binding(
-                                get: { menu.checkedApp == app.id }, set: { _ in delegate.listen(toID: app.id) })
-                        ) {
-                            Label {
-                                Text(app.isPlaying ? "\(app.name), playing" : app.name)
-                            } icon: {
-                                if let icon = delegate.icon(for: app.id) { Image(nsImage: icon) }
-                            }
-                        }
-                    }
-                }
-            }
 
             Menu(menu.languageTitle) {
                 ForEach(menu.installedLanguages) { language in
@@ -334,20 +331,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for source in found where icons[source.id] == nil { icons[source.id] = source.icon }
     }
 
-    func togglePlayback() {
-        if isListening {
+    /// Chosen from the list. The app being captioned carries the checkmark,
+    /// so choosing it again means stop — which is what unchecking a checked
+    /// item means everywhere else.
+    func chooseApp(_ id: String) {
+        if isListening, listening?.id == id {
             stop()
-        } else if let id = menu.candidate?.id, let source = sources.first(where: { $0.id == id }) {
-            listen(to: source)
+            return
         }
-    }
-
-    /// Chosen from the list. Choosing the app already running is a no-op
-    /// rather than a restart: a Toggle fires on the checked item too.
-    func listen(toID id: String) {
-        guard !(isListening && listening?.id == id) else { return }
         guard let source = sources.first(where: { $0.id == id }) else { return }
-        listen(to: source, keepingHistory: true)
+        listen(to: source, keepingHistory: isListening)
     }
 
     func listen(to app: AudioApp, keepingHistory: Bool = false) {
