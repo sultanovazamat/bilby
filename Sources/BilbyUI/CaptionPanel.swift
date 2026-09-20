@@ -10,8 +10,18 @@ import SwiftUI
 /// It stopped being click-through when it grew buttons: a control drawn on a
 /// window that ignores the mouse cannot be pressed. Dragging it anywhere is
 /// what replaces clicking through it.
-public final class CaptionPanel: NSPanel {
+public final class CaptionPanel: NSPanel, NSWindowDelegate {
     private static let autosave = "CaptionBar"
+
+    /// The corner the bar is pinned to.
+    ///
+    /// Its height changes with every sentence, so its position has to be
+    /// stated absolutely each time. Deriving it from the frame the last
+    /// resize happened to leave behind is a feedback loop: `NSHostingView`
+    /// resizes a window anchored to its top while this class anchors to the
+    /// bottom, and the two disagreeing walked the bar two hundred thousand
+    /// points below the screen over one meeting.
+    private var anchor: NSPoint = .zero
 
     public init(content: some View) {
         super.init(
@@ -29,18 +39,30 @@ public final class CaptionPanel: NSPanel {
         hidesOnDeactivate = false
         isMovableByWindowBackground = true
 
-        let hosting = FirstMouseHostingView(rootView: content)
-        hosting.sizingOptions = [.preferredContentSize]
-        contentView = hosting
+        // Deliberately not `.preferredContentSize`: that makes the hosting
+        // view a second thing that resizes the window, anchored to the
+        // opposite edge from `fitContent`. One resize path, one anchor.
+        contentView = FirstMouseHostingView(rootView: content)
+        delegate = self
 
-        if !setFrameUsingName(Self.autosave) { placeAtBottom() }
+        if !setFrameUsingName(Self.autosave) || !isSomewhereVisible {
+            placeAtBottom()
+        }
+        anchor = frame.origin
         setFrameAutosaveName(Self.autosave)
+    }
+
+    /// A position saved on a display that is no longer attached — or one that
+    /// drifted before this class pinned it — must not leave the bar somewhere
+    /// its owner cannot find it.
+    private var isSomewhereVisible: Bool {
+        NSScreen.screens.contains { $0.visibleFrame.intersects(frame) }
     }
 
     /// Bottom centre, like subtitles everywhere: shortest path for the eye
     /// between the speaker and the text. A corner would add a diagonal journey
     /// to every sentence, and the top right belongs to notifications anyway.
-    /// Only for the first run; after that the bar is wherever it was left.
+    /// Only until the bar is dragged somewhere its owner prefers.
     public func placeAtBottom(inset: CGFloat = 90) {
         guard let screen = NSScreen.main else { return }
         setFrameOrigin(
@@ -48,17 +70,27 @@ public final class CaptionPanel: NSPanel {
                 x: screen.visibleFrame.midX - frame.width / 2,
                 y: screen.visibleFrame.minY + inset
             ))
+        anchor = frame.origin
     }
 
-    /// Grows upward from wherever the bar sits: the bottom edge is the anchor,
-    /// so a second line pushes the first one up rather than dragging the whole
-    /// bar down over what it was placed to avoid.
+    /// Grows upward from the anchor, so a second line pushes the first one up
+    /// rather than dragging the bar down over whatever it was placed to avoid.
     public func fitContent() {
         guard let hosting = contentView else { return }
-        let height = max(hosting.fittingSize.height, 1)
-        guard abs(height - frame.height) > 0.5 else { return }
-        setFrame(
-            NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: height),
-            display: true)
+        let ideal = hosting.fittingSize.height
+        // A view that has not been laid out yet reports nothing, and
+        // believing it collapses the bar to a sliver.
+        guard ideal > 1 else { return }
+        let target = NSRect(x: anchor.x, y: anchor.y, width: frame.width, height: ideal)
+        guard target != frame else { return }
+        setFrame(target, display: true)
+    }
+
+    /// Dragging the bar chooses a new anchor. Resizing it does not: AppKit
+    /// posts this for moves, and a resize that shifts the origin arrives as
+    /// `windowDidResize` alone — measured, because the difference is the
+    /// whole bug this anchor exists to prevent.
+    public func windowDidMove(_ notification: Notification) {
+        anchor = frame.origin
     }
 }

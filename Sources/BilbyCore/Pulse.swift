@@ -15,6 +15,9 @@ public final class Pulse: Sendable {
         var translations = 0
         var began: ContinuousClock.Instant?
         var subject = ""
+        /// Loudest sample since the last report. A frame count cannot tell
+        /// a paused video from a recogniser that has given up; this can.
+        var peak: Float = 0
         /// A stall is said once, not every time it is looked at.
         var announced = false
     }
@@ -22,6 +25,11 @@ public final class Pulse: Sendable {
     private let state = Mutex(State())
 
     public init() {}
+
+    /// Audio arrived, and how loud it was.
+    public func sawAudio(peak: Float) {
+        state.withLock { $0.peak = max($0.peak, peak) }
+    }
 
     /// Speech reached the engine.
     public func heard() {
@@ -54,8 +62,11 @@ public final class Pulse: Sendable {
             if let began = state.began, now - began >= limit {
                 problem = "translation of “\(state.subject)” has not come back in \(Self.seconds(now - began))"
             } else if state.utterances > 0, now - state.lastUtterance >= limit {
-                problem = "nothing recognised for \(Self.seconds(now - state.lastUtterance))"
+                problem =
+                    "nothing recognised for \(Self.seconds(now - state.lastUtterance))"
+                    + Self.sound(state.peak)
             }
+            state.peak = 0
 
             switch (problem, state.announced) {
             case (let problem?, false):
@@ -68,6 +79,13 @@ public final class Pulse: Sendable {
                 return nil
             }
         }
+    }
+
+    /// Silence is the commonest reason for no captions and the least
+    /// alarming, so the log should say so rather than imply a fault.
+    private static func sound(_ peak: Float) -> String {
+        guard peak > 0.003 else { return " while the audio is silent" }
+        return String(format: " while audio is playing (peak %.2f)", peak)
     }
 
     private static func counts(_ state: State) -> String {

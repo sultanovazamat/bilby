@@ -1,4 +1,5 @@
 import AVFoundation
+import Accelerate
 import BilbyCore
 
 /// A speech recogniser. The port lives here rather than in the core because it
@@ -40,5 +41,20 @@ final class AudioClock: @unchecked Sendable {
     func advance(frames: Int, rate: Double) {
         guard rate > 0 else { return }
         lock.lock(); seconds += Double(frames) / rate; lock.unlock()
+    }
+}
+
+extension AVAudioPCMBuffer {
+    /// The loudest sample in the buffer, 0…1.
+    ///
+    /// A tap delivers frames at the same rate whether the meeting is talking
+    /// or paused, so a frame count says nothing about whether there was
+    /// anything to hear. This is what separates a quiet room from a
+    /// recogniser that has stopped working.
+    var peak: Float {
+        guard let data = floatChannelData else { return 0 }
+        var loudest: Float = 0
+        vDSP_maxmgv(data[0], 1, &loudest, vDSP_Length(Int(frameLength) * Int(format.channelCount)))
+        return loudest
     }
 }

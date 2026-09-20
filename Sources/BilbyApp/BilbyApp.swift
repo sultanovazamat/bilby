@@ -306,6 +306,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         model.status = StatusText.waiting(readiness: readiness, app: listening?.name)
+        // The hosting view no longer resizes the window by itself, so a
+        // status line that appears between sentences has to ask.
+        if mode == .bar { panel?.fitContent() }
     }
 
     func translate(into code: String) {

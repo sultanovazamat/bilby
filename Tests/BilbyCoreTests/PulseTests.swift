@@ -41,6 +41,22 @@ struct PulseTests {
         #expect(report.contains("translated 1"))
     }
 
+    @Test("silence and a broken recogniser are not the same report")
+    func silenceIsNamed() throws {
+        let quiet = Pulse()
+        quiet.heard()
+        quiet.sawAudio(peak: 0.0001)
+        let hush = try #require(quiet.report(stage: "asr", after: .zero))
+        #expect(hush.contains("the audio is silent"))
+
+        let loud = Pulse()
+        loud.heard()
+        loud.sawAudio(peak: 0.42)
+        let noise = try #require(loud.report(stage: "asr", after: .zero))
+        #expect(noise.contains("audio is playing"))
+        #expect(!noise.contains("silent"))
+    }
+
     @Test("a long limit means a working pipeline stays quiet")
     func patientLimit() {
         let pulse = Pulse()

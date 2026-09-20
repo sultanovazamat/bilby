@@ -1,3 +1,4 @@
+import Accelerate
 @preconcurrency import AVFoundation
 import BilbyCore
 import FluidAudio
@@ -83,6 +84,34 @@ public struct UnifiedTranscriber: AudioTranscribing {
                     return
                 }
 
+                // The first inference pays for setting the graph up on the
+                // Neural Engine, and the tap does not wait: every buffer that
+                // arrives meanwhile queues, and an unbounded queue never
+                // drains, so the captions run that far behind for the rest of
+                // the session — measured at 10.8 s on a live call. Paying it
+                // here, before the tap opens, costs the same seconds once and
+                // the user is told what is happening.
+                if let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2),
+                    let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48000)
+                {
+                    silence.frameLength = silence.frameCapacity
+                    if let data = silence.floatChannelData {
+                        for channel in 0..<Int(format.channelCount) {
+                            memset(data[channel], 0, Int(silence.frameLength) * MemoryLayout<Float>.size)
+                        }
+                    }
+                    let begun = ContinuousClock.now
+                    do {
+                        try await manager.appendAudio(silence)
+                        try await manager.processBufferedAudio()
+                        Log.write("asr: primed in \(ContinuousClock.now - begun)")
+                    } catch {
+                        Log.write("asr: priming FAILED — \(error)")
+                    }
+                }
+
+                // Set after priming, so a second of silence cannot be
+                // mistaken for something somebody said.
                 await manager.setPartialTranscriptCallback { text in
                     // No pause detection: this engine punctuates, and its full
                     // stops beat any timing guess.
@@ -102,6 +131,7 @@ public struct UnifiedTranscriber: AudioTranscribing {
 
                 for await buffer in source() {
                     onAudio?(Int(buffer.frameLength))
+                    pulse.sawAudio(peak: buffer.peak)
                     clock.advance(frames: Int(buffer.frameLength), rate: buffer.format.sampleRate)
                     do {
                         try await manager.appendAudio(buffer)
