@@ -69,7 +69,7 @@ struct MenuStateTests {
         #expect(menu.statusLine == "Bilby isn’t allowed to hear other apps.")
     }
 
-    @Test("the language item names the current language and lists only installed ones")
+    @Test("the translate item names the current language and lists only installed ones")
     func languages() {
         var menu = MenuState()
         menu.languages = [
@@ -77,9 +77,9 @@ struct MenuStateTests {
             .init(code: "ru", name: "Russian", isInstalled: true),
         ]
         menu.target = "ru"
-        #expect(menu.languageTitle == "Language: Russian")
+        #expect(menu.languageTitle == "Translate to: Russian")
         #expect(menu.installedLanguages.map(\.code) == ["ru"])
         menu.target = nil
-        #expect(menu.languageTitle == "Language")
+        #expect(menu.languageTitle == "Translate to")
     }
 }

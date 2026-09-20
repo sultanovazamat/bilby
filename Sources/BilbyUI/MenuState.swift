@@ -56,11 +56,13 @@ public struct MenuState: Equatable, Sendable {
     public var checkedApp: String? { listening?.id ?? candidate?.id }
 
     public var installedLanguages: [Language] { languages.filter(\.isInstalled) }
+    /// Names the direction, not the noun: the submenu under it is a list of
+    /// languages, so calling it "Language" said the same word twice.
     public var languageTitle: String {
         if let target, let name = languages.first(where: { $0.code == target })?.name {
-            return "Language: \(name)"
+            return "Translate to: \(name)"
         }
-        return "Language"
+        return "Translate to"
     }
 
     /// One line under the primary item, only when there is something to say.
