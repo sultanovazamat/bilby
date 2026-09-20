@@ -79,7 +79,6 @@ struct BilbyApp: App {
 @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var isListening = false
-    private(set) var isHidden = false
     private(set) var sources: [AudioApp] = []
     private(set) var languages: [Languages.Entry] = []
     /// Nil until the user has chosen one; setup asks before anything can run.
@@ -101,13 +100,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The pipeline's last reported stage, refreshed when the menu opens
     /// and when a line lands. Diagnostics itself is not observable.
     private(set) var pipeline: Diagnostics.State = .noAudio
-    private(set) var showsHistory = false
+    /// Bar or panel. Modes, not layers: the panel replaces the bar.
+    private(set) var showsHistory = UserDefaults.standard.bool(forKey: "showsHistory")
     @ObservationIgnored private var setup: SetupWindow?
     @ObservationIgnored private var setupModel: SetupModel?
     @ObservationIgnored private var setupListening: Task<Void, Never>?
 
     @ObservationIgnored private let model = CaptionModel()
     @ObservationIgnored private var panel: CaptionPanel?
+    @ObservationIgnored private var history: HistoryPanel?
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private let diagnostics = Diagnostics()
 
@@ -134,6 +135,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func setHistory(_ on: Bool) {
         showsHistory = on
+        UserDefaults.standard.set(on, forKey: "showsHistory")
+        present()
+    }
+
+    /// Puts whichever caption surface the mode calls for on screen, or
+    /// neither.
+    private func present() {
+        guard isListening else {
+            panel?.orderOut(nil)
+            history?.orderOut(nil)
+            return
+        }
+        if showsHistory {
+            panel?.orderOut(nil)
+            history?.orderFrontRegardless()
+        } else {
+            history?.orderOut(nil)
+            panel?.orderFrontRegardless()
+            panel?.fitContent()
+        }
     }
 
     /// Shown once at first launch, and afterwards for a language download,
@@ -210,6 +231,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = CaptionPanel(content: CaptionBar(model: model))
         panel.placeAtBottom()
         self.panel = panel
+        let history = HistoryPanel(content: HistoryView(model: model))
+        history.onClose = { [weak self] in self?.setHistory(false) }
+        self.history = history
         refreshSources()
         if !UserDefaults.standard.bool(forKey: "didSetUp") { showSetup() }
     }
@@ -305,11 +329,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         start { tap.buffers(of: processes) }
     }
 
-    func toggleCaptions() {
-        isHidden.toggle()
-        if isHidden { panel?.orderOut(nil) } else { panel?.orderFrontRegardless() }
-    }
-
     func stop() {
         running?.cancel()
         running = nil
@@ -322,15 +341,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isListening = false
         pipeline = diagnostics.state
         model.clear()
-        panel?.orderOut(nil)
+        present()
     }
 
     private func start(audio: @escaping @Sendable () -> AsyncStream<AVAudioPCMBuffer>) {
         stop()
         diagnostics.reset()
         isListening = true
-        isHidden = false
-        panel?.orderFrontRegardless()
+        present()
 
         guard let chosenTarget = target else { return }
         let counter = diagnostics
@@ -380,7 +398,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Log.write("lag \(lag(spokenAt)) to translation — \(text)")
                 }
                 model.apply(event)
-                panel?.fitContent()
+                if !showsHistory { panel?.fitContent() }
             }
             if generation == mine { finish() }
         }

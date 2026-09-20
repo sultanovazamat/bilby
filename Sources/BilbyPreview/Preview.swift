@@ -68,6 +68,33 @@ struct Preview {
             try snap(model, "caption")
             model.stopWatching()
         }
+        // The history panel's content, with a session's worth of sentences.
+        for scheme in [ColorScheme.light, .dark] {
+            let appearance = scheme == .light ? "light" : "dark"
+            let model = CaptionModel()
+            var engine = CaptionEngine()
+            let script = [
+                (
+                    "So let's circle back on the runway before we commit to Q3.",
+                    "Итак, давайте вернёмся к запасу денег, прежде чем брать обязательства по третьему кварталу."
+                ),
+                (
+                    "Burn is up eighteen percent quarter over quarter.",
+                    "Расходы выросли на восемнадцать процентов по сравнению с прошлым кварталом."
+                ),
+                ("Two senior hires are pending offer.", "Два старших специалиста ждут оффера."),
+            ]
+            for (source, translation) in script {
+                for event in engine.consume(Utterance(source, isFinal: true)) { model.apply(event) }
+                if let line = model.latest {
+                    for event in engine.resolve(line.id, translation: translation) { model.apply(event) }
+                }
+            }
+            model.apply(.live("And the bridge round term sheet"))
+            model.apply(.draft("И условия промежуточного раунда"))
+            let view = HistoryView(model: model).frame(width: 380, height: 520).environment(\.colorScheme, scheme)
+            try save(view, to: directory.appendingPathComponent("history-\(appearance).png"))
+        }
         print("Wrote previews to \(directory.path)")
     }
 
