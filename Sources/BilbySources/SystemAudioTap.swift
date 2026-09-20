@@ -16,7 +16,10 @@ public struct AudioApp: Sendable, Identifiable, Hashable {
     public let id: String
     public let name: String
     public let processes: [AudioObjectID]
-    public let isPlaying: Bool
+    /// The ones rendering output right now. Which ones matters, not just
+    /// whether any: a tap bound to the quiet half of an app hears nothing.
+    public let playingProcesses: [AudioObjectID]
+    public var isPlaying: Bool { !playingProcesses.isEmpty }
     /// The app's icon, for the menu. Absent for processes whose owner has quit.
     public var icon: NSImage? { pid.flatMap { NSRunningApplication(processIdentifier: $0)?.icon } }
 
@@ -58,7 +61,8 @@ public final class SystemAudioTap: @unchecked Sendable {
     /// against 5 apps with a Dock icon, and the one actually playing was a
     /// browser helper with no icon at all.
     public static func candidates() -> [AudioApp] {
-        var byApp: [String: (name: String, pid: pid_t?, processes: [AudioObjectID], playing: Bool)] = [:]
+        var byApp: [String: (name: String, pid: pid_t?, processes: [AudioObjectID], playing: [AudioObjectID])] =
+            [:]
 
         for object in objects(of: kAudioHardwarePropertyProcessObjectList,
                               on: AudioObjectID(kAudioObjectSystemObject)) {
@@ -69,9 +73,9 @@ public final class SystemAudioTap: @unchecked Sendable {
             let key = family(of: bundle)
             guard key != Bundle.main.bundleIdentifier else { continue }  // never ourselves
 
-            var entry = byApp[key] ?? (name: key, pid: nil, processes: [], playing: false)
+            var entry = byApp[key] ?? (name: key, pid: nil, processes: [], playing: [])
             entry.processes.append(object)
-            entry.playing = entry.playing || playing
+            if playing { entry.playing.append(object) }
             // Only an app with a Dock presence names the family. Helpers and
             // daemons are real audio processes and belong in the tap, but
             // "Slack Helper" and "Systemsoundserverd" are not things anyone
@@ -89,7 +93,7 @@ public final class SystemAudioTap: @unchecked Sendable {
             .filter { $0.value.pid != nil }
             .map { key, entry in
                 AudioApp(id: key, name: entry.name, processes: entry.processes,
-                         isPlaying: entry.playing, pid: entry.pid)
+                         playingProcesses: entry.playing, pid: entry.pid)
             }
         // Whatever is audible first, then the rest by name.
         .sorted { ($0.isPlaying ? 0 : 1, $0.name) < ($1.isPlaying ? 0 : 1, $1.name) }
@@ -137,7 +141,7 @@ public final class SystemAudioTap: @unchecked Sendable {
             guard let format = Self.tapFormat(tap) else {
                 return giveUp("tap reported no audio format")
             }
-            guard let outputUID = Self.defaultOutputUID() else {
+            guard let outputUID = Self.currentOutputUID else {
                 return giveUp("no default output device")
             }
             let aggregateStatus = AudioHardwareCreateAggregateDevice(
@@ -232,7 +236,10 @@ public final class SystemAudioTap: @unchecked Sendable {
         return AVAudioFormat(streamDescription: &description)
     }
 
-    private static func defaultOutputUID() -> String? {
+    /// The device the system is playing through now. The aggregate device is
+    /// built around it, so a change here leaves the tap pointed at a device
+    /// nothing is coming out of.
+    public static var currentOutputUID: String? {
         guard let device = property(
             AudioObjectID(kAudioObjectSystemObject),
             kAudioHardwarePropertyDefaultSystemOutputDevice,
