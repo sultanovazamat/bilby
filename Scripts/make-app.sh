@@ -5,29 +5,27 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Not inside ~/Desktop: an app that lives there triggers a Desktop-access
 # prompt merely by reading its own resource bundle, and a captions app asking
-# to see your files looks exactly as alarming as it sounds. Denying it then
-# leaves the app unable to load its own images.
+# to see your files looks exactly as alarming as it sounds.
 APP="${BILBY_APP_PATH:-$HOME/Applications/Bilby.app}"
+# debug while developing; release.sh asks for release.
+CONFIG="${BILBY_CONFIG:-debug}"
+BUILD="$ROOT/.build/$CONFIG"
 mkdir -p "$(dirname "$APP")"
 
-swift build --product Bilby --package-path "$ROOT" >/dev/null
+swift build -c "$CONFIG" --product Bilby --package-path "$ROOT" >/dev/null
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
-cp "$ROOT/.build/debug/Bilby" "$APP/Contents/MacOS/Bilby"
-
-# SwiftPM emits resources as separate bundles beside the executable, and
-# Bundle.module looks for them there. Copying only the binary produced an app
-# whose onboarding screenshots silently did not exist.
-mkdir -p "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$BUILD/Bilby" "$APP/Contents/MacOS/Bilby"
 cp "$ROOT/Resources/Bilby.icns" "$APP/Contents/Resources/Bilby.icns"
 
-# Bundle.module searches Bundle.main.resourceURL — Contents/Resources — before
-# anything beside the executable. Copying only to MacOS produced an app whose
-# screenshots existed on disk and were invisible to the code looking for them.
-for bundle in "$ROOT"/.build/debug/*.bundle; do
+# SwiftPM emits resources as bundles beside the executable. Contents/Resources
+# is the only place a signed app may keep them, and UIResources looks there.
+# SwiftPM's own Bundle.module would not: it checks the app's top level and then
+# the absolute build path of this checkout — which is why the app used to run
+# here and crash on every other Mac. check-app-portable.sh guards against that.
+for bundle in "$BUILD"/*.bundle; do
     [ -e "$bundle" ] || continue
     cp -R "$bundle" "$APP/Contents/Resources/"
-    cp -R "$bundle" "$APP/Contents/MacOS/"
 done
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

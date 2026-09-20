@@ -17,10 +17,12 @@ STAGE="$ROOT/.build/dmg"
 APP="$STAGE/Bilby.app"
 DMG="$ROOT/.build/Bilby.dmg"
 
-"$ROOT/Scripts/make-app.sh" >/dev/null
 rm -rf "$STAGE" "$DMG"
 mkdir -p "$STAGE"
-cp -R "$ROOT/.build/Bilby.app" "$APP"
+# Build straight into the staging folder: the image must hold the app that
+# was just built, not whatever an earlier run left in .build.
+BILBY_CONFIG=release BILBY_APP_PATH="$APP" "$ROOT/Scripts/make-app.sh" >/dev/null
+"$ROOT/Scripts/check-app-portable.sh" "$APP"
 
 if [ -n "$IDENTITY" ]; then
     echo "signing with: $IDENTITY"
