@@ -85,7 +85,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     @ObservationIgnored private var warming: Task<Readiness, Never>?
-    @ObservationIgnored private var supervisor: Task<Void, Never>?
     /// Which start is current, so a stream that ends late cannot finish a
     /// session that replaced it.
     @ObservationIgnored private var generation = 0
@@ -353,35 +352,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.write("app: listening to \(app.name) — \(app.processes.count) audio processes")
         let counter = diagnostics
         let tap = SystemAudioTap(onFailure: { counter.failed($0) })
-        let processes = app.processes
-        start(audio: { tap.buffers(of: processes) }, keepingHistory: keepingHistory)
-        supervise(app)
-    }
-
-    /// A tap is built once, around the processes an app owned and the device
-    /// it was playing through. Both change underneath it — headphones go in, a
-    /// new tab starts playing from a process that did not exist — and Core
-    /// Audio says nothing, it just delivers the silence of whatever it was
-    /// pointed at. So something has to ask.
-    private func supervise(_ app: AudioApp) {
-        supervisor?.cancel()
-        var watch = TapWatch(output: SystemAudioTap.currentOutputUID, processes: Set(app.processes))
-        supervisor = Task { [weak self] in
-            while let self, !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(3)) } catch { return }
-                guard !Task.isCancelled, isListening, listening?.id == app.id else { return }
-                refreshSources()
-                let current = sources.first { $0.id == app.id }
-                let playing = Set(current?.playingProcesses ?? [])
-                guard
-                    case .rebuild(let reason) = watch.check(
-                        output: SystemAudioTap.currentOutputUID, playing: playing)
-                else { continue }
-                Log.write("session: rebuilding the tap — \(reason)")
-                if let current { listen(to: current, keepingHistory: true) }
-                return
-            }
-        }
+        // Asked again whenever Core Audio's process list changes, so a new
+        // browser tab's audio helper is picked up without the recogniser
+        // noticing anything happened.
+        let id = app.id
+        start(
+            audio: {
+                tap.buffers(of: { SystemAudioTap.candidates().first { $0.id == id }?.processes ?? [] })
+            }, keepingHistory: keepingHistory)
     }
 
     func stop() {
@@ -394,8 +372,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// keep offering Stop for something that is no longer running.
     private func finish(keepingHistory: Bool = false) {
         guard isListening else { return }
-        supervisor?.cancel()
-        supervisor = nil
         isListening = false
         pipeline = diagnostics.state
         model.clear(keepingHistory: keepingHistory)
