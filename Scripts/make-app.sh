@@ -44,5 +44,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+# Screenshots taken with the Screenshot app carry Finder metadata as extended
+# attributes, and codesign refuses a bundle that contains any ("resource
+# fork, Finder information, or similar detritus not allowed").
+xattr -cr "$APP"
+codesign --force --sign - "$APP" >/dev/null 2>&1 || echo "warning: ad-hoc signing failed for $APP" >&2
 echo "$APP"
