@@ -67,8 +67,8 @@ public struct SetupView: View {
             // click. Bilby has no Dock icon, so knowing where it lives is not
             // a detail — it is the difference between using it and losing it.
             Group {
-                if let shot = model.step.screenshot {
-                    Image(shot, bundle: .module)
+                if let name = model.step.screenshot, let shot = UIResources.screenshot(named: name) {
+                    Image(nsImage: shot)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
