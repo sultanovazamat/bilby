@@ -73,6 +73,7 @@ public final class SetupModel {
     private let fetchLanguages: () async -> [LanguageChoice]
     private let selectTarget: (String) -> Void
     private let warmUp: () -> Void
+    private let preferredLanguages: [String]
     private var hasWarmedUp = false
     /// How often the permission page re-checks. Tests shorten it.
     private let pollInterval: Duration
@@ -85,7 +86,8 @@ public final class SetupModel {
         loadLanguages: @escaping () async -> [LanguageChoice] = { [] },
         selectTarget: @escaping (String) -> Void = { _ in },
         warmUp: @escaping () -> Void = {},
-        selectedLanguageCode: String = "ru",
+        selectedLanguageCode: String? = nil,
+        preferredLanguages: [String] = Locale.preferredLanguages,
         startingAt: Step = .welcome,
         pollInterval: Duration = .seconds(1)
     ) {
@@ -97,7 +99,8 @@ public final class SetupModel {
         self.fetchLanguages = loadLanguages
         self.selectTarget = selectTarget
         self.warmUp = warmUp
-        self.selectedLanguageCode = selectedLanguageCode
+        self.selectedLanguageCode = selectedLanguageCode ?? ""
+        self.preferredLanguages = preferredLanguages
         self.pollInterval = pollInterval
         if startingAt.rawValue >= Step.language.rawValue { ensureWarm() }
     }
@@ -189,8 +192,21 @@ public final class SetupModel {
         let entries = await fetchLanguages()
         guard isActive, step == .language, !Task.isCancelled else { return }
         languages = entries
-        if selectedLanguage == nil { selectedLanguageCode = entries.first?.code ?? "" }
+        if selectedLanguage == nil {
+            selectedLanguageCode = Self.defaultLanguage(preferred: preferredLanguages, among: entries) ?? ""
+        }
         if entries.isEmpty { languageError = "Languages couldn’t be loaded. Try again." }
+    }
+
+    /// The first language the user already reads that Apple can translate
+    /// into. English is skipped: it is the source, so never the target. No
+    /// match leaves the choice to the user rather than guessing.
+    static func defaultLanguage(preferred: [String], among languages: [LanguageChoice]) -> String? {
+        for tag in preferred {
+            let code = tag.split(separator: "-").first.map { $0.lowercased() } ?? ""
+            if code != "en", languages.contains(where: { $0.code == code }) { return code }
+        }
+        return nil
     }
 
     public func selectLanguage(_ code: String) {

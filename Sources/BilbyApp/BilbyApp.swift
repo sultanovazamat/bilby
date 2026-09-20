@@ -66,7 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var isHidden = false
     private(set) var sources: [AudioApp] = []
     private(set) var languages: [Languages.Entry] = []
-    private(set) var target = Language(UserDefaults.standard.string(forKey: "targetLanguage") ?? "ru")
+    /// Nil until the user has chosen one; setup asks before anything can run.
+    private(set) var target: Language? = UserDefaults.standard.string(forKey: "targetLanguage").map(Language.init)
     /// How far the recogniser is. Drives the bar's status line and the
     /// last setup page.
     private(set) var readiness: Readiness = .idle {
@@ -119,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             selectTarget: { [weak self] code in self?.chooseTarget(code) },
             warmUp: { [weak self] in self?.warm() },
-            selectedLanguageCode: language ?? target.code,
+            selectedLanguageCode: language ?? target?.code,
             startingAt: step
         )
         setupModel = model
@@ -257,6 +258,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func listen(to app: AudioApp) {
+        guard target != nil else {
+            showSetup(at: .language)
+            return
+        }
         listening = app
         Log.write("app: listening to \(app.name) — \(app.processes.count) audio processes")
         let counter = diagnostics
@@ -291,8 +296,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isHidden = false
         panel?.orderFrontRegardless()
 
+        guard let chosenTarget = target else { return }
         let counter = diagnostics
-        let chosenTarget = target
         generation += 1
         let mine = generation
         running = Task { [weak self] in

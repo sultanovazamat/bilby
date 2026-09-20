@@ -190,6 +190,9 @@ public struct SetupView: View {
                         set: { model.selectLanguage($0) }
                     )
                 ) {
+                    if model.selectedLanguageCode.isEmpty {
+                        Text("Choose a language").tag("")
+                    }
                     ForEach(model.languages) { language in
                         Text(language.isInstalled ? "\(language.name) — ready" : language.name)
                             .tag(language.code)
@@ -263,6 +266,7 @@ public struct SetupView: View {
             if model.isLoadingLanguages { return "Loading…" }
             if model.preparation != nil { return "Preparing…" }
             if model.languages.isEmpty { return "Try again" }
+            if model.selectedLanguage == nil { return "Choose a language" }
             if model.canContinue { return model.finishesAfterLanguage ? "Done" : "Try live captions" }
             return model.languageError == nil ? "Download language" : "Retry download"
         case .tryIt: return "Start using Bilby"
@@ -271,7 +275,9 @@ public struct SetupView: View {
 
     private var actionDisabled: Bool {
         switch model.step {
-        case .language: model.isLoadingLanguages || model.preparation != nil
+        case .language:
+            model.isLoadingLanguages || model.preparation != nil
+                || (!model.languages.isEmpty && model.selectedLanguage == nil)
         default: false
         }
     }

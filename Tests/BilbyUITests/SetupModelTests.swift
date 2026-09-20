@@ -163,12 +163,53 @@ struct SetupModelTests {
         model.stopWatching()
     }
 
+    @Test("the default language is the first one the system prefers that Apple can translate into")
+    func defaultLanguageFromSystem() async {
+        let model = SetupModel(
+            checkAudio: { true }, openSettings: {}, startListening: {},
+            loadLanguages: {
+                [.init(code: "ru", name: "Russian", isInstalled: false), .init(code: "de", name: "German", isInstalled: false)]
+            },
+            preferredLanguages: ["en-US", "de-DE", "ru-RU"]
+        )
+        await reachLanguages(model)
+        #expect(model.selectedLanguageCode == "de")
+    }
+
+    @Test("an English-only system leaves the choice to the user")
+    func englishOnlySystem() async {
+        let model = SetupModel(
+            checkAudio: { true }, openSettings: {}, startListening: {},
+            loadLanguages: { [.init(code: "ru", name: "Russian", isInstalled: true)] },
+            preferredLanguages: ["en-US", "en-GB"]
+        )
+        await reachLanguages(model)
+        #expect(model.selectedLanguageCode == "")
+        #expect(model.selectedLanguage == nil)
+        #expect(!model.canContinue)
+        model.selectLanguage("ru")
+        #expect(model.canContinue)
+    }
+
+    @Test("a saved choice beats the system preference")
+    func savedChoiceWins() async {
+        let model = SetupModel(
+            checkAudio: { true }, openSettings: {}, startListening: {},
+            loadLanguages: {
+                [.init(code: "ru", name: "Russian", isInstalled: true), .init(code: "de", name: "German", isInstalled: true)]
+            },
+            selectedLanguageCode: "ru", preferredLanguages: ["de-DE"]
+        )
+        await reachLanguages(model)
+        #expect(model.selectedLanguageCode == "ru")
+    }
+
     @Test("setup opened for a language starts there and finishes there")
     func startsAtLanguage() async {
         let model = SetupModel(
             checkAudio: { true }, openSettings: {}, startListening: {},
             loadLanguages: { [.init(code: "fr", name: "French", isInstalled: true)] },
-            startingAt: .language
+            selectedLanguageCode: "fr", startingAt: .language
         )
         #expect(model.step == .language)
         #expect(model.finishesAfterLanguage)
@@ -287,7 +328,7 @@ struct SetupModelTests {
                     .init(code: "ru", name: "Russian", isInstalled: false),
                     .init(code: "fr", name: "French", isInstalled: true),
                 ]
-            }, selectTarget: selectTarget
+            }, selectTarget: selectTarget, selectedLanguageCode: "ru"
         )
     }
 
