@@ -184,6 +184,12 @@ public struct SetupView: View {
             .toggleStyle(.checkbox)
             .font(.system(size: 13))
             .frame(maxWidth: .infinity, alignment: .leading)
+            if let note = model.loginNote {
+                Text(note)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -280,6 +286,7 @@ public struct SetupView: View {
         // pressing it will do, given the state it is actually in.
         case .permission:
             switch model.audio {
+            case .unknown: return "Checking…"
             case .granted: return "Continue"
             case .nothingToProbe: return "Continue anyway"
             case .refused: return "Open Settings"
@@ -297,6 +304,7 @@ public struct SetupView: View {
 
     private var actionDisabled: Bool {
         switch model.step {
+        case .permission: model.audio == .unknown
         case .language:
             model.isLoadingLanguages || model.preparation != nil
                 || (!model.languages.isEmpty && model.selectedLanguage == nil)
@@ -311,7 +319,9 @@ public struct SetupView: View {
         case .language where model.languages.isEmpty:
             Task { await model.loadLanguages() }
         case .language where !model.canContinue: model.prepareLanguage()
-        case .language where model.finishesAfterLanguage: onFinish()
+        case .language where model.finishesAfterLanguage:
+            model.finish()
+            onFinish()
         case .tryIt: onFinish()
         default: model.advance()
         }

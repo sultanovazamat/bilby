@@ -86,9 +86,19 @@ public enum Readiness: Equatable, Sendable {
 
 /// What a probe of the system-audio permission found.
 public enum AudioAccess: Equatable, Sendable {
+    /// Not probed yet. The page shows neither a grant nor a refusal.
+    case unknown
     case granted
     case refused
     /// No app has played audio yet, so there was nothing to probe and macOS
     /// has not been asked. Not a refusal.
     case nothingToProbe
+}
+
+/// What registering as a login item came to.
+public enum LoginItemOutcome: Equatable, Sendable {
+    case done
+    /// Registered, but macOS wants the user to approve it in Login Items.
+    case needsApproval
+    case failed
 }

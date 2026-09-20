@@ -16,9 +16,18 @@ PID=$!
 sleep 6
 if kill -0 "$PID" 2>/dev/null; then
     kill "$PID"
-    echo "✓ $APP runs without $ROOT"
 else
     echo "✗ $APP died without $ROOT:"
     cat "$LOG"
     exit 1
 fi
+# Alive is not enough: the resolver answers nil rather than crashing, so an
+# app shipped without its images would pass and show empty pages. The bundle
+# must be in the shipped layout, and the app must have found it there.
+BUNDLE="$APP/Contents/Resources/Bilby_BilbyUI.bundle"
+for file in menu-bar.png menu-sources.png; do
+    [ -f "$BUNDLE/$file" ] || { echo "✗ $BUNDLE/$file is missing"; exit 1; }
+done
+grep -q "resources: $BUNDLE" /tmp/bilby.log \
+    || { echo "✗ the app did not load its images from $BUNDLE:"; grep "resources:" /tmp/bilby.log || echo "(no resources line in /tmp/bilby.log)"; exit 1; }
+echo "✓ $APP runs without $ROOT and found its images in Contents/Resources"

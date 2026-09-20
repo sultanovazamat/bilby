@@ -25,6 +25,7 @@ cp "$ROOT/Resources/Bilby.icns" "$APP/Contents/Resources/Bilby.icns"
 # here and crash on every other Mac. check-app-portable.sh guards against that.
 for bundle in "$BUILD"/*.bundle; do
     [ -e "$bundle" ] || continue
+    case "$bundle" in *CLI.bundle) continue ;; esac  # FluidAudio's tool, not linked
     cp -R "$bundle" "$APP/Contents/Resources/"
 done
 cat > "$APP/Contents/Info.plist" <<PLIST

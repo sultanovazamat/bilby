@@ -37,6 +37,4 @@ public enum AudioPermission: Sendable {
         if status != noErr { Log.write("permission: tap refused, status \(status)") }
         return status == noErr ? .granted : .refused
     }
-
-    public static var isGranted: Bool { check() == .granted }
 }

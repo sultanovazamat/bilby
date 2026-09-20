@@ -63,6 +63,20 @@ struct CaptionModelTests {
         #expect(model.lines.last?.source == "Sentence 504.")
     }
 
+    @Test("a switch mid-session keeps the sentences already shown")
+    func switchKeepsHistory() {
+        let model = CaptionModel()
+        var engine = CaptionEngine()
+        for event in engine.consume(Utterance("First sentence. Second")) { model.apply(event) }
+        model.apply(.draft("Второе"))
+        model.clear(keepingHistory: true)
+        #expect(model.lines.map(\.source) == ["First sentence."])
+        #expect(model.live.isEmpty)
+        #expect(model.draft.isEmpty)
+        model.clear()
+        #expect(model.lines.isEmpty)
+    }
+
     @Test("the status line clears when words arrive and when the session ends")
     func statusClears() {
         let model = CaptionModel()

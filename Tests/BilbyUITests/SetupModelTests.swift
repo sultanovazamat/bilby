@@ -40,6 +40,15 @@ struct SetupModelTests {
         model.stopWatching()
     }
 
+    @Test("before the first probe the page is neither granted nor refused")
+    func unknownBeforeProbe() {
+        let model = SetupModel(checkAudio: { .granted }, openSettings: {}, startListening: {})
+        model.advance()
+        #expect(model.audio == .unknown)
+        #expect(!model.canContinue)
+        model.stopWatching()
+    }
+
     @Test("with nothing playing, the page explains and lets the user continue without opening Settings")
     func nothingToProbe() {
         var openedSettings = false
@@ -96,7 +105,8 @@ struct SetupModelTests {
                     return $0 > 1 ? .granted : .refused
                 }
             },
-            openSettings: {}, startListening: {}
+            openSettings: {}, startListening: {},
+            pollInterval: .milliseconds(1)
         )
         model.advance()
         await model.watchPermission()
@@ -164,7 +174,10 @@ struct SetupModelTests {
         let model = SetupModel(
             checkAudio: { .granted }, openSettings: {}, startListening: {},
             loadLanguages: { [.init(code: "fr", name: "French", isInstalled: true)] },
-            warmUp: { warmUps += 1 }
+            warmUp: {
+                warmUps += 1
+                return .preparing
+            }
         )
         model.advance()
         model.requestAudioAccess()
@@ -178,6 +191,20 @@ struct SetupModelTests {
         model.retryWarmUp()
         #expect(warmUps == 2)
         #expect(model.readiness == .preparing)
+        model.stopWatching()
+    }
+
+    @Test("a recogniser that is already warm shows as ready at once")
+    func alreadyWarm() {
+        let model = SetupModel(
+            checkAudio: { .granted }, openSettings: {}, startListening: {},
+            loadLanguages: { [.init(code: "fr", name: "French", isInstalled: true)] },
+            warmUp: { .ready }
+        )
+        model.advance()
+        model.requestAudioAccess()
+        model.advance()
+        #expect(model.readiness == .ready)
         model.stopWatching()
     }
 
@@ -222,31 +249,73 @@ struct SetupModelTests {
         #expect(model.selectedLanguageCode == "ru")
     }
 
-    @Test("the login-item choice is passed on")
+    @Test("the login-item checkbox reflects what macOS actually did")
     func loginItem() {
         var recorded: Bool?
+        var outcome = LoginItemOutcome.done
         let model = SetupModel(
             checkAudio: { .granted }, openSettings: {}, startListening: {},
-            setOpensAtLogin: { recorded = $0 }
+            setOpensAtLogin: {
+                recorded = $0
+                return outcome
+            }
         )
         #expect(!model.opensAtLogin)
         model.setOpensAtLogin(true)
         #expect(model.opensAtLogin)
         #expect(recorded == true)
+        #expect(model.loginNote == nil)
+
+        outcome = .needsApproval
+        model.setOpensAtLogin(true)
+        #expect(model.opensAtLogin)
+        #expect(model.loginNote == "macOS needs you to approve this in System Settings → General → Login Items.")
+
+        outcome = .failed
+        model.setOpensAtLogin(true)
+        #expect(!model.opensAtLogin)
+        #expect(model.loginNote == "Bilby couldn’t be added to your login items.")
+
+        outcome = .done
+        model.setOpensAtLogin(false)
+        #expect(!model.opensAtLogin)
+        #expect(model.loginNote == nil)
     }
 
-    @Test("setup opened for a language starts there and finishes there")
+    @Test("setup opened for a language starts there, finishes there, and hands the language on")
     func startsAtLanguage() async {
+        var chosen: String?
         let model = SetupModel(
             checkAudio: { .granted }, openSettings: {}, startListening: {},
-            loadLanguages: { [.init(code: "fr", name: "French", isInstalled: true)] },
+            loadLanguages: {
+                [.init(code: "fr", name: "French", isInstalled: true), .init(code: "de", name: "German", isInstalled: true)]
+            },
+            selectTarget: { chosen = $0 },
             selectedLanguageCode: "fr", startingAt: .language
         )
         #expect(model.step == .language)
         #expect(model.finishesAfterLanguage)
         #expect(!model.isComplete)
         await model.loadLanguages()
+        model.selectLanguage("de")
         #expect(model.canContinue)
+        model.finish()
+        #expect(chosen == "de")
+        #expect(!model.isComplete)
+    }
+
+    @Test("finishing at the language page with nothing installed hands nothing on")
+    func finishWithoutInstalledLanguage() async {
+        var chosen: String?
+        let model = SetupModel(
+            checkAudio: { .granted }, openSettings: {}, startListening: {},
+            loadLanguages: { [.init(code: "ru", name: "Russian", isInstalled: false)] },
+            selectTarget: { chosen = $0 },
+            selectedLanguageCode: "ru", startingAt: .language
+        )
+        await model.loadLanguages()
+        model.finish()
+        #expect(chosen == nil)
     }
 
     @Test("an installed language continues without a download")

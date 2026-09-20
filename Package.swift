@@ -38,5 +38,6 @@ let package = Package(
         .executableTarget(name: "BilbyModels", dependencies: [.product(name: "FluidAudio", package: "FluidAudio")]),
         .testTarget(name: "BilbyCoreTests", dependencies: ["BilbyCore"]),
         .testTarget(name: "BilbyUITests", dependencies: ["BilbyUI"]),
+        .testTarget(name: "BilbySourcesTests", dependencies: ["BilbySources"]),
     ]
 )

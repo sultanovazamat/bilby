@@ -42,10 +42,12 @@ public final class CaptionModel {
 
     public init() {}
 
-    /// Clears everything when a session ends, so stale text does not linger.
-    public func clear() {
+    /// Clears the bar when a session ends, so stale text does not linger.
+    /// A switch of app or language mid-session keeps the history: the panel
+    /// exists to be read back, and a switch is not a reason to lose it.
+    public func clear(keepingHistory: Bool = false) {
         live = ""
-        lines = []
+        if !keepingHistory { lines = [] }
         draft = ""
         provisional = nil
         status = nil

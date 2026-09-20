@@ -57,7 +57,7 @@ public final class SetupModel {
     /// Reaching the last page is finishing: closing the window from there
     /// must not bring the whole flow back at the next launch.
     public var isComplete: Bool { step == .tryIt }
-    public private(set) var audio: AudioAccess = .refused
+    public private(set) var audio: AudioAccess = .unknown
     public var hasAudioAccess: Bool { audio == .granted }
     public private(set) var languages: [LanguageChoice] = []
     public private(set) var selectedLanguageCode: String
@@ -67,16 +67,20 @@ public final class SetupModel {
     public private(set) var caption: (source: String, translation: String)?
     /// Whether Bilby starts at login, offered on the last page.
     public private(set) var opensAtLogin: Bool
+    /// What to tell the user when registering did not simply work.
+    public private(set) var loginNote: String?
     /// How far the recogniser is, for the last page.
     public private(set) var readiness: Readiness = .idle
 
     private let checkAudio: @Sendable () -> AudioAccess
     private let openSettings: () -> Void
     private let startListening: () -> Void
-    private let loginItemHandler: (Bool) -> Void
+    private let loginItemHandler: (Bool) -> LoginItemOutcome
     private let fetchLanguages: () async -> [LanguageChoice]
     private let selectTarget: (String) -> Void
-    private let warmUp: () -> Void
+    /// Starts the recogniser loading if it is not already, and reports where
+    /// it stands — which may already be ready.
+    private let warmUp: () -> Readiness
     private let preferredLanguages: [String]
     private var hasWarmedUp = false
     /// How often the permission page re-checks. Tests shorten it.
@@ -88,10 +92,10 @@ public final class SetupModel {
         openSettings: @escaping () -> Void,
         startListening: @escaping () -> Void,
         opensAtLogin: Bool = false,
-        setOpensAtLogin: @escaping (Bool) -> Void = { _ in },
+        setOpensAtLogin: @escaping (Bool) -> LoginItemOutcome = { _ in .done },
         loadLanguages: @escaping () async -> [LanguageChoice] = { [] },
         selectTarget: @escaping (String) -> Void = { _ in },
-        warmUp: @escaping () -> Void = {},
+        warmUp: @escaping () -> Readiness = { .ready },
         selectedLanguageCode: String? = nil,
         preferredLanguages: [String] = Locale.preferredLanguages,
         startingAt: Step = .welcome,
@@ -123,7 +127,7 @@ public final class SetupModel {
         case .welcome: return true
         // Nothing to probe is not a refusal: the prompt comes with the first
         // start, and holding the page hostage until then helps nobody.
-        case .permission: return audio != .refused
+        case .permission: return audio == .granted || audio == .nothingToProbe
         case .language: return selectedLanguage?.isInstalled == true && preparation == nil
         case .tryIt: return true
         }
@@ -142,14 +146,19 @@ public final class SetupModel {
     public func ensureWarm() {
         guard isActive, !hasWarmedUp else { return }
         hasWarmedUp = true
-        readiness = .preparing
-        warmUp()
+        readiness = warmUp()
     }
 
     public func retryWarmUp() {
         guard isActive else { return }
-        readiness = .preparing
-        warmUp()
+        readiness = warmUp()
+    }
+
+    /// Leaving from the language page, when the window opened there: the
+    /// chosen language is handed on, as advance() would have done.
+    public func finish() {
+        guard isActive, step == .language, selectedLanguage?.isInstalled == true else { return }
+        selectTarget(selectedLanguageCode)
     }
 
     public func update(readiness: Readiness) {
@@ -157,8 +166,17 @@ public final class SetupModel {
     }
 
     public func setOpensAtLogin(_ on: Bool) {
-        opensAtLogin = on
-        loginItemHandler(on)
+        switch loginItemHandler(on) {
+        case .done:
+            opensAtLogin = on
+            loginNote = nil
+        case .needsApproval:
+            opensAtLogin = on
+            loginNote = "macOS needs you to approve this in System Settings → General → Login Items."
+        case .failed:
+            opensAtLogin = false
+            loginNote = "Bilby couldn’t be added to your login items."
+        }
     }
 
     public func show(_ source: String, _ translation: String) {

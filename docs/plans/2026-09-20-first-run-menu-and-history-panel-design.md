@@ -109,9 +109,12 @@ the bar. The mode persists.
 New or changed pieces, all behind the existing seams:
 
 - `BilbyUI/UIResources.swift` — bundle resolver and `screenshot(named:)`.
-- `BilbySources/AudioTranscribing.swift` — `Readiness` enum and
-  `warmUp(progress:)`; `UnifiedTranscriber` forwards FluidAudio's progress
-  handler.
+- `BilbyCore/Models.swift` — `Readiness`, `AudioAccess` and
+  `LoginItemOutcome`: plain enums, because both `BilbySources` (which
+  produces them) and `BilbyUI` (which shows them) import the core and
+  neither imports the other.
+- `BilbySources/AudioTranscribing.swift` — `warmUp(progress:)`;
+  `UnifiedTranscriber` forwards FluidAudio's progress handler.
 - `BilbyUI/CaptionModel.swift` — keeps `lines` for the session (capped),
   adds `status` text and the `pair` the bar shows.
 - `BilbyUI/HistoryPanel.swift`, `HistoryView.swift` — the side mode.

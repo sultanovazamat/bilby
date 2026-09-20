@@ -29,7 +29,10 @@ public final class HistoryPanel: NSPanel {
         minSize = NSSize(width: 280, height: 240)
         standardWindowButton(.miniaturizeButton)?.isHidden = true
         standardWindowButton(.zoomButton)?.isHidden = true
-        contentView = NSHostingView(rootView: content)
+        let hosting = NSHostingView(rootView: content)
+        // The window's frame is the user's; the view must not push back.
+        hosting.sizingOptions = [.minSize]
+        contentView = hosting
 
         // Remembered between launches; docked to the right edge the first
         // time, the side of the screen a meeting window covers least.

@@ -178,14 +178,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     SetupModel.LanguageChoice(code: $0.code, name: $0.name, isInstalled: $0.isInstalled)
                 }
             },
-            selectTarget: { [weak self] code in self?.chooseTarget(code) },
-            warmUp: { [weak self] in self?.warm() },
+            selectTarget: { [weak self] code in self?.applyTarget(code) },
+            warmUp: { [weak self] in self?.warmAndReport() ?? .idle },
             selectedLanguageCode: language ?? target?.code,
             startingAt: step
         )
         setupModel = model
         let content = SetupView(model: model) { [weak self] in
-            self?.markSetUp()
+            // Only the last page finishes setup. Opened for a language, the
+            // window closes without pretending the first run happened.
+            if model.isComplete { self?.markSetUp() }
             self?.setup?.close()
         }
         .background {
@@ -207,6 +209,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func markSetUp() { UserDefaults.standard.set(true, forKey: "didSetUp") }
+
+    /// Starts the recogniser loading if it is not already, and says where it
+    /// stands, which may already be ready.
+    private func warmAndReport() -> Readiness {
+        warm()
+        return readiness
+    }
+
+    /// A language chosen in setup: remembered, and applied to a running
+    /// session without losing what it has shown so far.
+    private func applyTarget(_ code: String) {
+        guard code != target?.code else { return }
+        chooseTarget(code)
+        if isListening, let source = listening { listen(to: source, keepingHistory: true) }
+    }
 
     func openPermissionSettings() {
         if let url = AudioPermission.settingsURL { NSWorkspace.shared.open(url) }
@@ -230,6 +247,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.start()
         Log.write("app: launched, build \(Bundle.main.bundlePath)")
+        // Resolve the resource bundle now, so its log line says where the
+        // images came from before any page asks for them.
+        _ = UIResources.bundle
         let panel = CaptionPanel(content: CaptionBar(model: model))
         panel.placeAtBottom()
         self.panel = panel
@@ -247,8 +267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let warming, !readiness.isFailure { return warming }
         readiness = .preparing
         let transcriber = UnifiedTranscriber()
-        // The delegate lives as long as the app, so capturing it is fine; a
-        // weak capture cannot be referenced from the nested closures below.
+        // The delegate lives as long as the app, so a strong capture is fine.
         let task = Task.detached { () -> Readiness in
             let final = await transcriber.warmUp { partial in
                 Task { @MainActor in
@@ -287,8 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showSetup(at: .language, language: code)
             return
         }
-        chooseTarget(code)
-        if isListening, let source = listening { listen(to: source) }
+        applyTarget(code)
     }
 
     private func chooseTarget(_ code: String) {
@@ -313,12 +331,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Chosen from the list. Choosing the app already running is a no-op
+    /// rather than a restart: a Toggle fires on the checked item too.
     func listen(toID id: String) {
+        guard !(isListening && listening?.id == id) else { return }
         guard let source = sources.first(where: { $0.id == id }) else { return }
-        listen(to: source)
+        listen(to: source, keepingHistory: true)
     }
 
-    func listen(to app: AudioApp) {
+    func listen(to app: AudioApp, keepingHistory: Bool = false) {
         guard target != nil else {
             showSetup(at: .language)
             return
@@ -328,7 +349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let counter = diagnostics
         let tap = SystemAudioTap(onFailure: { counter.failed($0) })
         let processes = app.processes
-        start { tap.buffers(of: processes) }
+        start(audio: { tap.buffers(of: processes) }, keepingHistory: keepingHistory)
     }
 
     func stop() {
@@ -339,20 +360,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The stream ended, by Stop or by itself. Either way the menu must not
     /// keep offering Stop for something that is no longer running.
-    private func finish() {
+    private func finish(keepingHistory: Bool = false) {
+        guard isListening else { return }
         isListening = false
         pipeline = diagnostics.state
-        model.clear()
+        model.clear(keepingHistory: keepingHistory)
         present()
     }
 
-    private func start(audio: @escaping @Sendable () -> AsyncStream<AVAudioPCMBuffer>) {
-        stop()
+    private func start(
+        audio: @escaping @Sendable () -> AsyncStream<AVAudioPCMBuffer>, keepingHistory: Bool
+    ) {
+        guard let chosenTarget = target else { return }
+        running?.cancel()
+        running = nil
+        finish(keepingHistory: keepingHistory)
         diagnostics.reset()
         isListening = true
         present()
 
-        guard let chosenTarget = target else { return }
         let counter = diagnostics
         generation += 1
         let mine = generation
