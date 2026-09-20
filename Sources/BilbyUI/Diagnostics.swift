@@ -24,14 +24,22 @@ public final class Diagnostics: @unchecked Sendable {
         mutate { frames = 0; utterances = 0; lines = 0; failure = nil }
     }
 
-    /// One line for the menu, naming the first stage that is empty.
-    public var summary: String {
+    /// The first stage that is empty. `StatusText` turns it into a sentence.
+    public enum State: Equatable, Sendable {
+        case failed(String)
+        case noAudio
+        case noSpeech(frames: Int)
+        case noSentence(utterances: Int)
+        case flowing(lines: Int)
+    }
+
+    public var state: State {
         lock.lock(); defer { lock.unlock() }
-        if let failure { return "Failed: \(failure)" }
-        if frames == 0 { return "No audio from that app" }
-        if utterances == 0 { return "Audio \(frames / 1000)k · no speech recognised yet" }
-        if lines == 0 { return "Heard \(utterances) · no full sentence yet" }
-        return "Audio \(frames / 1000)k · heard \(utterances) · \(lines) lines"
+        if let failure { return .failed(failure) }
+        if frames == 0 { return .noAudio }
+        if utterances == 0 { return .noSpeech(frames: frames) }
+        if lines == 0 { return .noSentence(utterances: utterances) }
+        return .flowing(lines: lines)
     }
 
     private func mutate(_ change: () -> Void) {

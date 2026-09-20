@@ -14,4 +14,20 @@ public enum StatusText {
         case .ready: return app.map { "Listening to \($0)…" } ?? "Listening…"
         }
     }
+
+    /// While captions run: the first stage that is empty, or nil when words
+    /// are flowing. A running app should not narrate itself.
+    public static func problem(_ state: Diagnostics.State, app: String) -> String? {
+        switch state {
+        case .flowing: return nil
+        case .noAudio: return "No sound from \(app) yet. Is it muted?"
+        case .noSpeech: return "Listening, no speech heard yet"
+        case .noSentence: return "Listening…"
+        case .failed(let reason) where isPermission(reason): return "Bilby isn’t allowed to hear other apps."
+        case .failed: return "Something went wrong. Start captions again."
+        }
+    }
+
+    /// A tap that could not be created is, in practice, a tap macOS refused.
+    public static func isPermission(_ reason: String) -> Bool { reason.hasPrefix("create tap") }
 }

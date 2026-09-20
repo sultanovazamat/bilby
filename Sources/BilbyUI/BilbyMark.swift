@@ -47,10 +47,20 @@ public struct BilbyMark: Shape {
     }
 
     /// macOS supplies the tint for light, dark, and highlighted menu bars.
-    public static func menuBarImage(side: CGFloat = 18) -> NSImage {
+    /// While captions run a dot sits at the corner: the only place a menu bar
+    /// app can say "on" without words.
+    public static func menuBarImage(side: CGFloat = 18, listening: Bool = false) -> NSImage {
         let image = NSImage(size: CGSize(width: side, height: side), flipped: true) { rect in
             NSColor.black.setFill()
-            NSBezierPath(cgPath: BilbyMark().path(in: rect).cgPath).fill()
+            guard listening else {
+                NSBezierPath(cgPath: BilbyMark().path(in: rect).cgPath).fill()
+                return true
+            }
+            // Room for the dot: the mark shrinks toward the top-left corner.
+            let mark = CGRect(x: 0, y: 0, width: side * 0.78, height: side * 0.78)
+            NSBezierPath(cgPath: BilbyMark().path(in: mark).cgPath).fill()
+            let dot = CGRect(x: side * 0.68, y: side * 0.68, width: side * 0.32, height: side * 0.32)
+            NSBezierPath(ovalIn: dot).fill()
             return true
         }
         image.isTemplate = true

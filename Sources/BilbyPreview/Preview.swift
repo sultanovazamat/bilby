@@ -16,8 +16,8 @@ struct Preview {
             print("wrote \(out.path)")
             return
         }
-        for side in [18, 32] {
-            render(CGFloat(side))
+        for (side, listening) in [(18, false), (18, true), (32, false)] {
+            render(CGFloat(side), listening: listening)
             print()
         }
         guard let flag = CommandLine.arguments.firstIndex(of: "--output"),
@@ -71,9 +71,9 @@ struct Preview {
         print("Wrote previews to \(directory.path)")
     }
 
-    static func render(_ side: CGFloat) {
-        print("── \(Int(side))pt ──")
-        let image = BilbyMark.menuBarImage(side: side)
+    static func render(_ side: CGFloat, listening: Bool) {
+        print("── \(Int(side))pt\(listening ? ", listening" : "") ──")
+        let image = BilbyMark.menuBarImage(side: side, listening: listening)
         guard let data = image.tiffRepresentation,
             let bitmap = NSBitmapImageRep(data: data)
         else { return }

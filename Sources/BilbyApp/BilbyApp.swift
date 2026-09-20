@@ -11,50 +11,66 @@ struct BilbyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        // The icon is the state: a bubble when idle, a waveform when listening.
         MenuBarExtra {
             // Enumerating Core Audio processes is not free, and warming the
             // model costs seconds. Both happen when the menu opens — the only
             // moment the list has to be right and the user is about to act.
             Color.clear.frame(height: 0).onAppear { delegate.menuOpened() }
+            let menu = delegate.menu
 
-            Button(delegate.playTitle) { delegate.togglePlayback() }
+            Button(menu.primaryTitle) { delegate.togglePlayback() }
                 .keyboardShortcut("p")
-
+                .disabled(!menu.primaryEnabled)
             // Only speak up when something is wrong. A running app should not
             // narrate itself.
-            if let problem = delegate.problem { Text(problem) }
+            if let line = menu.statusLine { Text(line) }
 
             Divider()
 
-            Menu("Listen to") {
-                ForEach(delegate.sources) { source in
-                    Button {
-                        delegate.listen(to: source)
-                    } label: {
-                        if let icon = source.icon { Image(nsImage: icon) }
-                        Text(source.isPlaying ? "\(source.name) — playing" : source.name)
+            // A list is worth showing only when there is a choice to make.
+            if menu.showsListenTo {
+                Menu("Listen To") {
+                    ForEach(menu.apps) { app in
+                        Toggle(
+                            isOn: Binding(
+                                get: { menu.checkedApp == app.id }, set: { _ in delegate.listen(toID: app.id) })
+                        ) {
+                            Label {
+                                Text(app.isPlaying ? "\(app.name), playing" : app.name)
+                            } icon: {
+                                if let icon = delegate.icon(for: app.id) { Image(nsImage: icon) }
+                            }
+                        }
                     }
                 }
-                if delegate.sources.isEmpty { Text("No apps have played audio yet") }
             }
 
-            Menu("Translate to") {
-                ForEach(delegate.languages) { language in
-                    Button(language.isInstalled ? language.name : "\(language.name) — download") {
-                        delegate.translate(into: language)
+            Menu(menu.languageTitle) {
+                ForEach(menu.installedLanguages) { language in
+                    Toggle(
+                        isOn: Binding(
+                            get: { menu.target == language.code }, set: { _ in delegate.translate(into: language.code) })
+                    ) {
+                        Text(language.name)
                     }
                 }
-                if delegate.languages.isEmpty { Text("Loading…") }
+                if !menu.installedLanguages.isEmpty { Divider() }
+                Button("Add Language…") { delegate.showSetup(at: .language) }
             }
+
+            Toggle(
+                "Show Sentence History",
+                isOn: Binding(get: { delegate.showsHistory }, set: { delegate.setHistory($0) }))
 
             Divider()
 
-            Button("Setup…") { delegate.showSetup() }
+            if menu.showsFixPermission {
+                Button("Fix Permission…") { delegate.openPermissionSettings() }
+            }
             Button("Quit Bilby") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
         } label: {
-            Image(nsImage: BilbyMark.menuBarImage())
+            Image(nsImage: BilbyMark.menuBarImage(listening: delegate.isListening))
         }
     }
 }
@@ -80,7 +96,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Which start is current, so a stream that ends late cannot finish a
     /// session that replaced it.
     @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var listening: AudioApp?
+    /// The app being captioned, or the last one, for Start to go back to.
+    private(set) var listening: AudioApp?
+    /// The pipeline's last reported stage, refreshed when the menu opens
+    /// and when a line lands. Diagnostics itself is not observable.
+    private(set) var pipeline: Diagnostics.State = .noAudio
+    private(set) var showsHistory = false
     @ObservationIgnored private var setup: SetupWindow?
     @ObservationIgnored private var setupModel: SetupModel?
     @ObservationIgnored private var setupListening: Task<Void, Never>?
@@ -90,13 +111,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private let diagnostics = Diagnostics()
 
-    /// Names what pressing it will do, the way a player does.
-    var playTitle: String {
-        if isListening { return "Pause" }
-        if let first = sources.first(where: \.isPlaying) ?? sources.first {
-            return "Listen to \(first.name)"
+    var menu: MenuState {
+        func app(_ source: AudioApp) -> MenuState.App {
+            MenuState.App(id: source.id, name: source.name, isPlaying: source.isPlaying)
         }
-        return "No apps that play audio"
+        var state = MenuState()
+        state.apps = sources.map(app)
+        state.listening = isListening ? listening.map(app) : nil
+        state.lastListened = listening.map(app)
+        state.languages = languages.map {
+            MenuState.Language(code: $0.code, name: $0.name, isInstalled: $0.isInstalled)
+        }
+        state.target = target?.code
+        state.readiness = readiness
+        state.pipeline = pipeline
+        return state
+    }
+
+    func icon(for id: String) -> NSImage? {
+        sources.first { $0.id == id }?.icon
+    }
+
+    func setHistory(_ on: Bool) {
+        showsHistory = on
     }
 
     /// Shown once at first launch, and afterwards for a language download,
@@ -206,6 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func menuOpened() {
         refreshSources()
         Task { languages = await Languages.available() }
+        pipeline = diagnostics.state
         warm()
     }
 
@@ -218,20 +256,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.status = StatusText.waiting(readiness: readiness, app: listening?.name)
     }
 
-    /// Shown only when the pipeline is stuck, so the menu stays quiet when
-    /// everything works.
-    var problem: String? {
-        guard isListening else { return nil }
-        let summary = diagnostics.summary
-        return summary.hasPrefix("Audio ") && summary.contains("lines") ? nil : summary
-    }
-
-    func translate(into language: Languages.Entry) {
-        guard language.isInstalled else {
-            showSetup(at: .language, language: language.code)
+    func translate(into code: String) {
+        guard languages.first(where: { $0.code == code })?.isInstalled == true else {
+            showSetup(at: .language, language: code)
             return
         }
-        chooseTarget(language.code)
+        chooseTarget(code)
         if isListening, let source = listening { listen(to: source) }
     }
 
@@ -252,9 +282,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func togglePlayback() {
         if isListening {
             stop()
-        } else if let first = sources.first(where: \.isPlaying) ?? sources.first {
-            listen(to: first)
+        } else if let id = menu.candidate?.id, let source = sources.first(where: { $0.id == id }) {
+            listen(to: source)
         }
+    }
+
+    func listen(toID id: String) {
+        guard let source = sources.first(where: { $0.id == id }) else { return }
+        listen(to: source)
     }
 
     func listen(to app: AudioApp) {
@@ -285,6 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// keep offering Stop for something that is no longer running.
     private func finish() {
         isListening = false
+        pipeline = diagnostics.state
         model.clear()
         panel?.orderOut(nil)
     }
@@ -331,6 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .line(let line):
                     Log.write("lag \(lag(line.at)) to line — \(line.source)")
                     diagnostics.committedLine()
+                    pipeline = diagnostics.state
                 case .draft(let text):
                     Log.write("draft — \(text)")
                 case .translated(let id, let text):
