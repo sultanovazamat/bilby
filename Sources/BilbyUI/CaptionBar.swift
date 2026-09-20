@@ -12,7 +12,6 @@ import SwiftUI
 /// could not be pressed. Everything is driven from the menu bar.
 public struct CaptionBar: View {
     private let model: CaptionModel
-    @State private var appeared = false
 
     /// One type size for both lines. The only thing separating them is
     /// colour — the source dimmer, the translation at full strength.
@@ -20,47 +19,29 @@ public struct CaptionBar: View {
 
     public init(model: CaptionModel) { self.model = model }
 
-    private var isEmpty: Bool {
-        model.live.isEmpty && model.latest == nil && model.draft.isEmpty
-    }
-
-    private var hidden: Bool { isEmpty && model.status == nil }
-
-    /// While a sentence is still being spoken its provisional translation is
-    /// shown, dimmed. The settled one replaces it a beat later, at full
-    /// weight. Waiting for the settled text costs 1.2 s of silence.
-    private var translation: (text: String, settled: Bool)? {
-        if !model.draft.isEmpty { return (model.draft, false) }
-        if let line = model.latest, let text = line.translation { return (text, true) }
-        if let line = model.latest { return (line.source, false) }
-        return nil
-    }
+    private var hidden: Bool { model.pair == nil && model.status == nil }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            if !model.live.isEmpty {
+            if let pair = model.pair {
                 // Same size and weight as the translation: people read both,
                 // and shrinking the source turned it into decoration.
-                Text(model.live)
+                Text(pair.source)
                     .font(Self.line)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .truncationMode(.head)
                     .fixedSize(horizontal: false, vertical: true)
                     .contentTransition(.interpolate)
-                    .transition(.opacity)
-            }
-
-            if let translation {
-                Text(translation.text)
-                    .font(Self.line)
-                    .foregroundStyle(translation.settled ? .primary : .secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .contentTransition(.interpolate)
-            }
-
-            if isEmpty, let status = model.status {
+                if let translation = pair.translation {
+                    Text(translation)
+                        .font(Self.line)
+                        .foregroundStyle(pair.settled ? .primary : .secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.interpolate)
+                }
+            } else if let status = model.status {
                 Label(status, systemImage: "waveform")
                     .font(.system(size: 15, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
@@ -84,7 +65,6 @@ public struct CaptionBar: View {
         .scaleEffect(hidden ? 0.97 : 1, anchor: .bottom)
         .blur(radius: hidden ? 6 : 0)
         .animation(.smooth(duration: 0.28), value: hidden)
-        .animation(.smooth(duration: 0.18), value: translation?.text)
-        .animation(.easeOut(duration: 0.12), value: model.live)
+        .animation(.smooth(duration: 0.18), value: model.pair)
     }
 }
