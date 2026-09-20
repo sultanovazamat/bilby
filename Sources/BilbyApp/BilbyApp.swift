@@ -58,10 +58,6 @@ struct BilbyApp: App {
                 Button("Add Language…") { delegate.showSetup(at: .language) }
             }
 
-            Toggle(
-                "Show Sentence History",
-                isOn: Binding(get: { delegate.showsHistory }, set: { delegate.setHistory($0) }))
-
             Divider()
 
             if menu.showsFixPermission {
@@ -100,8 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The pipeline's last reported stage, refreshed when the menu opens
     /// and when a line lands. Diagnostics itself is not observable.
     private(set) var pipeline: Diagnostics.State = .noAudio
-    /// Bar or panel. Modes, not layers: the panel replaces the bar.
-    private(set) var showsHistory = UserDefaults.standard.bool(forKey: "showsHistory")
+    /// Bar or panel. Modes, not layers: one replaces the other. Chosen with
+    /// the buttons on the windows themselves, and remembered.
+    private(set) var mode: CaptionMode =
+        CaptionMode(rawValue: UserDefaults.standard.string(forKey: "captionMode") ?? "") ?? .bar
     @ObservationIgnored private var setup: SetupWindow?
     @ObservationIgnored private var setupModel: SetupModel?
     @ObservationIgnored private var setupListening: Task<Void, Never>?
@@ -109,6 +107,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @ObservationIgnored private let model = CaptionModel()
     @ObservationIgnored private var panel: CaptionPanel?
     @ObservationIgnored private var history: HistoryPanel?
+    /// Asking AppKit for an app's icon means finding its running process.
+    /// The menu redraws far more often than the list of apps changes.
+    @ObservationIgnored private var icons: [String: NSImage] = [:]
     @ObservationIgnored private var running: Task<Void, Never>?
     @ObservationIgnored private let diagnostics = Diagnostics()
 
@@ -129,14 +130,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return state
     }
 
-    func icon(for id: String) -> NSImage? {
-        sources.first { $0.id == id }?.icon
+    func icon(for id: String) -> NSImage? { icons[id] }
+
+    func setMode(_ new: CaptionMode) {
+        mode = new
+        UserDefaults.standard.set(new.rawValue, forKey: "captionMode")
+        present()
     }
 
-    func setHistory(_ on: Bool) {
-        showsHistory = on
-        UserDefaults.standard.set(on, forKey: "showsHistory")
-        present()
+    /// The three buttons both caption windows carry. Red stops captioning,
+    /// the way closing a document window ends it, rather than hiding a
+    /// session that would go on running unseen.
+    func perform(_ control: WindowControl) {
+        switch control {
+        case .close: stop()
+        case .collapse: setMode(.bar)
+        case .expand: setMode(.panel)
+        }
     }
 
     /// Puts whichever caption surface the mode calls for on screen, or
@@ -147,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             history?.orderOut(nil)
             return
         }
-        if showsHistory {
+        if mode == .panel {
             panel?.orderOut(nil)
             history?.orderFrontRegardless()
         } else {
@@ -250,12 +260,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Resolve the resource bundle now, so its log line says where the
         // images came from before any page asks for them.
         _ = UIResources.bundle
-        let panel = CaptionPanel(content: CaptionBar(model: model))
-        panel.placeAtBottom()
-        self.panel = panel
-        let history = HistoryPanel(content: HistoryView(model: model))
-        history.onClose = { [weak self] in self?.setHistory(false) }
-        self.history = history
+        let controls: (WindowControl) -> Void = { [weak self] in self?.perform($0) }
+        self.panel = CaptionPanel(content: CaptionBar(model: model, perform: controls))
+        self.history = HistoryPanel(content: HistoryView(model: model, perform: controls))
         refreshSources()
         if !UserDefaults.standard.bool(forKey: "didSetUp") { showSetup() }
     }
@@ -321,6 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("app: sources — \(found.map { "\($0.name)\($0.isPlaying ? " ▶︎" : "")" })")
         }
         sources = found
+        for source in found where icons[source.id] == nil { icons[source.id] = source.icon }
     }
 
     func togglePlayback() {
@@ -426,7 +434,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Log.write("lag \(lag(spokenAt)) to translation — \(text)")
                 }
                 model.apply(event)
-                if !showsHistory { panel?.fitContent() }
+                if mode == .bar { panel?.fitContent() }
             }
             if generation == mine { finish() }
         }

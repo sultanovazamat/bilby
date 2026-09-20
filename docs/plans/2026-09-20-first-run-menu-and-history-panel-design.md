@@ -164,3 +164,60 @@ String-level tests, no hardware, in `Tests/BilbyUITests`:
 Gatekeeper needs a Developer ID and notarisation. Text size, bar position and
 hiding the source line are follow-ups. The panel appears on the main display
 only, like the bar.
+
+---
+
+# Revision, 2026-09-20: the windows carry their own controls
+
+The mode switch was a checkable item in the menu bar. That is the wrong place
+for it: switching between the bar and the column is something you do *to the
+window in front of you*, and every other window on the machine offers that on
+the window itself. It also meant the menu carried a fifth item that was not
+about starting, stopping, or choosing.
+
+## Decisions
+
+**A control strip, on both surfaces.** A 28 pt band along the top of each
+caption window, tinted apart from the text and separated by a hairline,
+holding the three familiar buttons at the left: red closes, yellow collapses
+to the bar, green expands to the column. The one that would do nothing is
+greyed rather than hidden, as Finder greys zoom, so the row never changes
+shape. Glyphs appear on hover, over the whole strip at once. Text lives below
+the band and cannot reach it: a caption that grew into the buttons would be
+both unreadable and unclickable.
+
+**Red stops captioning.** Closing the window ends the session, the way closing
+a document window ends editing it, rather than hiding a session that goes on
+running unseen. The menu's Stop does the same thing.
+
+**The bar is no longer click-through.** A control drawn on a window that
+ignores the mouse cannot be pressed, and per-region pass-through across
+applications is not something AppKit offers. What replaces clicking through
+it is moving it: the bar is draggable anywhere on its surface and remembers
+where it was left. It also grows upward from its bottom edge now instead of
+re-centring, so a second line pushes the first one up rather than dragging the
+whole bar down over whatever it was placed to avoid.
+
+**The column follows the live sentence.** It scrolls with new text until the
+reader scrolls up, which is a statement that they are reading something.
+A round arrow then fades in at the bottom right — where a scroll view's own
+thumb ends — and one click returns to the live sentence and resumes
+following. Scrolling back down by hand resumes it too. The old "Latest" pill
+at the bottom centre is gone. The rule is a three-line value type,
+`LiveFollow`, so it is tested rather than watched.
+
+**The column is borderless too.** It keeps `.resizable` so how much history
+fits stays the reader's business, but drops the system title bar: with a strip
+of its own, a second row of buttons above it would be absurd, and a
+transparent title bar swallows clicks in the region where our own buttons sit.
+
+**The menu loses "Show Sentence History".** Four items in the ordinary case.
+
+## Consequences
+
+- Both windows take mouse events, so both need a hosting view that accepts the
+  first click; otherwise AppKit spends it making a window key that must never
+  become key.
+- Text selection in the column is gone for now. It was the one interaction
+  that could pull focus, and copying a transcript deserves to be a deliberate
+  action rather than a side effect of dragging.

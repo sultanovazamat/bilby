@@ -104,8 +104,18 @@ struct Preview {
             }
             model.apply(.live("And the bridge round term sheet"))
             model.apply(.draft("И условия промежуточного раунда"))
-            let view = HistoryView(model: model).frame(width: 380, height: 520).environment(\.colorScheme, scheme)
+            let view = HistoryView(model: model, perform: { _ in })
+                .frame(width: 380, height: 520)
+                .environment(\.colorScheme, scheme)
             try save(view, to: directory.appendingPathComponent("history-\(appearance).png"))
+
+            // The bar, over something to be read against.
+            let bar = CaptionBar(model: model, perform: { _ in })
+                .frame(width: 880)
+                .padding(26)
+                .background(scheme == .dark ? Color(white: 0.11) : Color(white: 0.92))
+                .environment(\.colorScheme, scheme)
+            try save(bar, to: directory.appendingPathComponent("bar-\(appearance).png"))
         }
         print("Wrote previews to \(directory.path)")
     }
