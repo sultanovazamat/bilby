@@ -72,6 +72,7 @@ public struct UnifiedTranscriber: AudioTranscribing {
                 let manager = StreamingUnifiedAsrManager(config: config)
                 let clock = AudioClock()
                 let spoken = RunningTranscript()
+                let pulse = Pulse()
 
                 do {
                     try await manager.loadModels()
@@ -85,16 +86,37 @@ public struct UnifiedTranscriber: AudioTranscribing {
                 await manager.setPartialTranscriptCallback { text in
                     // No pause detection: this engine punctuates, and its full
                     // stops beat any timing guess.
+                    pulse.heard()
                     let seen = spoken.observe(text, pause: nil)
                     guard !seen.tail.isEmpty else { return }
                     continuation.yield(Utterance(seen.tail, isFinal: false, at: clock.position))
                 }
 
+                // Swallowing these is how a recogniser that had stopped
+                // working came to look exactly like a room that had gone
+                // quiet: audio still arriving, nothing on screen, and a log
+                // full of frame counts saying everything was fine.
+                var failures = 0
+                var toldAt = ContinuousClock.now - .seconds(60)
+                var checkedAt = ContinuousClock.now
+
                 for await buffer in source() {
                     onAudio?(Int(buffer.frameLength))
                     clock.advance(frames: Int(buffer.frameLength), rate: buffer.format.sampleRate)
-                    try? await manager.appendAudio(buffer)
-                    try? await manager.processBufferedAudio()
+                    do {
+                        try await manager.appendAudio(buffer)
+                        try await manager.processBufferedAudio()
+                    } catch {
+                        failures += 1
+                        if ContinuousClock.now - toldAt >= .seconds(5) {
+                            toldAt = ContinuousClock.now
+                            Log.write("asr: FAILED on audio, \(failures) so far — \(error)")
+                        }
+                    }
+                    if ContinuousClock.now - checkedAt >= .seconds(2) {
+                        checkedAt = ContinuousClock.now
+                        if let line = pulse.report(stage: "asr") { Log.write(line) }
+                    }
                 }
                 _ = try? await manager.finish()
                 continuation.finish()

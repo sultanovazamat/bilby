@@ -25,6 +25,8 @@ public struct CaptionSession: Sendable {
 
     public func events(from utterances: AsyncStream<Utterance>) -> AsyncStream<CaptionEvent> {
         AsyncStream { continuation in
+            // Audio arriving is not progress. This is what did.
+            let pulse = Pulse()
             let task = Task {
                 // Owned by this task alone, so no lock and no actor are needed.
                 var engine = CaptionEngine(policy: policy)
@@ -33,10 +35,13 @@ public struct CaptionSession: Sendable {
                 var lastDraftAt = ContinuousClock.now - .seconds(10)
 
                 for await utterance in utterances {
+                    pulse.heard()
                     for event in engine.consume(utterance) { continuation.yield(event) }
 
                     while let line = engine.nextPending {
+                        pulse.translating(line.source)
                         let translation = try? await translator.translate(line.source, to: target)
+                        pulse.translated()
                         for event in engine.resolve(line.id, translation: translation) {
                             continuation.yield(event)
                         }
@@ -50,14 +55,27 @@ public struct CaptionSession: Sendable {
                        ContinuousClock.now - lastDraftAt >= draftInterval {
                         lastDraft = draft
                         lastDraftAt = ContinuousClock.now
-                        if let text = try? await translator.translate(draft, to: target) {
-                            continuation.yield(.draft(text))
-                        }
+                        pulse.translating(draft)
+                        let text = try? await translator.translate(draft, to: target)
+                        pulse.translated()
+                        if let text { continuation.yield(.draft(text)) }
                     }
                 }
                 continuation.finish()
             }
-            continuation.onTermination = { _ in task.cancel() }
+            // The bar freezing in place is the one failure the user sees and
+            // the log used to say nothing about.
+            let watchdog = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(2))
+                    guard !Task.isCancelled else { return }
+                    if let line = pulse.report(stage: "captions") { Log.write(line) }
+                }
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+                watchdog.cancel()
+            }
         }
     }
 }
