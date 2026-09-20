@@ -26,6 +26,8 @@ struct BilbyApp: App {
             } icon: {
                 if let id = menu.listening?.id, let icon = delegate.icon(for: id) {
                     Image(nsImage: icon)
+                } else {
+                    Image(systemName: "waveform.slash")
                 }
             }
 
@@ -34,7 +36,7 @@ struct BilbyApp: App {
             // The only way in. Naming one app on a line of its own meant
             // guessing which of several was meant, and the guess was
             // alphabetical.
-            Menu("Listen to") {
+            Menu {
                 ForEach(menu.apps) { app in
                     Toggle(
                         isOn: Binding(
@@ -48,14 +50,18 @@ struct BilbyApp: App {
                     }
                 }
                 if menu.apps.isEmpty { Text("No apps have played audio yet") }
+            } label: {
+                Label("Listen to", systemImage: "speaker.wave.2")
             }
             // Only speak up when something is wrong. A running app should not
             // narrate itself.
-            if let line = menu.statusLine { Text(line) }
+            if let line = menu.statusLine {
+                Label(line, systemImage: "exclamationmark.triangle")
+            }
 
             Divider()
 
-            Menu(menu.languageTitle) {
+            Menu {
                 ForEach(menu.installedLanguages) { language in
                     Toggle(
                         isOn: Binding(
@@ -65,16 +71,30 @@ struct BilbyApp: App {
                     }
                 }
                 if !menu.installedLanguages.isEmpty { Divider() }
-                Button("Add Language…") { delegate.showSetup(at: .language) }
+                Button {
+                    delegate.showSetup(at: .language)
+                } label: {
+                    Label("Add Language…", systemImage: "arrow.down.circle")
+                }
+            } label: {
+                Label(menu.languageTitle, systemImage: "character.bubble")
             }
 
             Divider()
 
             if menu.showsFixPermission {
-                Button("Fix Permission…") { delegate.openPermissionSettings() }
+                Button {
+                    delegate.openPermissionSettings()
+                } label: {
+                    Label("Fix Permission…", systemImage: "lock.shield")
+                }
             }
-            Button("Quit Bilby") { NSApplication.shared.terminate(nil) }
-                .keyboardShortcut("q")
+            Button {
+                NSApplication.shared.terminate(nil)
+            } label: {
+                Label("Quit Bilby", systemImage: "power")
+            }
+            .keyboardShortcut("q")
         } label: {
             Image(nsImage: BilbyMark.menuBarImage(listening: delegate.isListening))
         }
