@@ -87,46 +87,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return "No apps that play audio"
     }
 
-    /// Shown once, and reachable afterwards from the menu — the same window
-    /// has to reappear for a language download anyway.
-    func showSetup(languageCode: String? = nil) {
-        if let setup, languageCode == nil {
+    /// Shown once at first launch, and afterwards for a language download,
+    /// which needs a window for Apple's sheet to appear over.
+    func showSetup(at step: SetupModel.Step = .welcome, language: String? = nil) {
+        if let setup, step == .welcome {
             setup.present()
             return
         }
         setup?.close()
         let model = SetupModel(
             checkAudio: { AudioPermission.isGranted },
-            openSettings: {
-                if let url = AudioPermission.settingsURL { NSWorkspace.shared.open(url) }
-            },
+            openSettings: { [weak self] in self?.openPermissionSettings() },
             // The last step listens for real: the app proves itself instead of
             // describing itself.
-            startListening: { [weak self] in
-                guard let self else { return }
-                setupListening?.cancel()
-                setupListening = Task { [weak self] in
-                    while let self, !Task.isCancelled {
-                        refreshSources()
-                        if let source = sources.first(where: \.isPlaying) {
-                            listen(to: source)
-                            return
-                        }
-                        do { try await Task.sleep(for: .seconds(1)) } catch { return }
-                    }
-                }
-            },
+            startListening: { [weak self] in self?.listenToWhateverPlays() },
             loadLanguages: {
                 await Languages.available().map {
                     SetupModel.LanguageChoice(code: $0.code, name: $0.name, isInstalled: $0.isInstalled)
                 }
             },
             selectTarget: { [weak self] code in self?.chooseTarget(code) },
-            selectedLanguageCode: languageCode ?? target.code
+            selectedLanguageCode: language ?? target.code,
+            startingAt: step
         )
         setupModel = model
         let content = SetupView(model: model) { [weak self] in
-            UserDefaults.standard.set(true, forKey: "didSetUp")
+            self?.markSetUp()
             self?.setup?.close()
         }
         .background {
@@ -135,6 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = SetupWindow(
             content: content,
             onClose: { [weak self] in
+                // Closing from the last page is finishing, not abandoning.
+                if model.isComplete { self?.markSetUp() }
                 model.stopWatching()
                 self?.setupListening?.cancel()
                 self?.setupListening = nil
@@ -143,6 +131,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             })
         setup = window
         window.present()
+    }
+
+    private func markSetUp() { UserDefaults.standard.set(true, forKey: "didSetUp") }
+
+    func openPermissionSettings() {
+        if let url = AudioPermission.settingsURL { NSWorkspace.shared.open(url) }
+    }
+
+    /// The last setup page listens for real, to whichever app is playing.
+    private func listenToWhateverPlays() {
+        setupListening?.cancel()
+        setupListening = Task { [weak self] in
+            while let self, !Task.isCancelled {
+                refreshSources()
+                if let source = sources.first(where: \.isPlaying) {
+                    listen(to: source)
+                    return
+                }
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            }
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -183,7 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func translate(into language: Languages.Entry) {
         guard language.isInstalled else {
-            showSetup(languageCode: language.code)
+            showSetup(at: .language, language: language.code)
             return
         }
         chooseTarget(language.code)

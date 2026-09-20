@@ -124,11 +124,34 @@ struct SetupModelTests {
         #expect(model.step == .tryIt)
         #expect(chosen == "ru")
         #expect(starts == 1)
-        #expect(!model.canContinue)
-        model.show("Hello", "Привет")
         #expect(model.canContinue)
+        model.show("Hello", "Привет")
+        #expect(model.caption?.translation == "Привет")
+    }
+
+    @Test("the last page can always be left, caption or not")
+    func lastPageAlwaysContinues() async {
+        let model = makeModel()
+        await reachLanguages(model)
+        model.selectLanguage("fr")
         model.advance()
-        #expect(starts == 1)
+        #expect(model.step == .tryIt)
+        #expect(model.canContinue)
+        #expect(model.isComplete)
+    }
+
+    @Test("setup opened for a language starts there and finishes there")
+    func startsAtLanguage() async {
+        let model = SetupModel(
+            checkAudio: { true }, openSettings: {}, startListening: {},
+            loadLanguages: { [.init(code: "fr", name: "French", isInstalled: true)] },
+            startingAt: .language
+        )
+        #expect(model.step == .language)
+        #expect(model.finishesAfterLanguage)
+        #expect(!model.isComplete)
+        await model.loadLanguages()
+        #expect(model.canContinue)
     }
 
     @Test("an installed language continues without a download")

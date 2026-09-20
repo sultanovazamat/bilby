@@ -48,7 +48,14 @@ public final class SetupModel {
         public let code: String
     }
 
-    public private(set) var step: Step = .welcome
+    public private(set) var step: Step
+    /// Where the window opened. Opened for a language from the menu, it ends
+    /// after the download instead of replaying welcome and permission.
+    public let startedAt: Step
+    public var finishesAfterLanguage: Bool { startedAt == .language }
+    /// Reaching the last page is finishing: closing the window from there
+    /// must not bring the whole flow back at the next launch.
+    public var isComplete: Bool { step == .tryIt }
     public private(set) var hasAudioAccess = false
     public private(set) var languages: [LanguageChoice] = []
     public private(set) var selectedLanguageCode: String
@@ -73,8 +80,11 @@ public final class SetupModel {
         loadLanguages: @escaping () async -> [LanguageChoice] = { [] },
         selectTarget: @escaping (String) -> Void = { _ in },
         selectedLanguageCode: String = "ru",
+        startingAt: Step = .welcome,
         pollInterval: Duration = .seconds(1)
     ) {
+        self.step = startingAt
+        self.startedAt = startingAt
         self.checkAudio = checkAudio
         self.openSettings = openSettings
         self.startListening = startListening
@@ -94,7 +104,7 @@ public final class SetupModel {
         case .welcome: return true
         case .permission: return hasAudioAccess
         case .language: return selectedLanguage?.isInstalled == true && preparation == nil
-        case .tryIt: return caption != nil
+        case .tryIt: return true
         }
     }
 

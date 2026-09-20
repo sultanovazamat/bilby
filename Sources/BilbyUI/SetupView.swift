@@ -252,7 +252,7 @@ public struct SetupView: View {
             if model.isLoadingLanguages { return "Loading…" }
             if model.preparation != nil { return "Preparing…" }
             if model.languages.isEmpty { return "Try again" }
-            if model.canContinue { return "Try live captions" }
+            if model.canContinue { return model.finishesAfterLanguage ? "Done" : "Try live captions" }
             return model.languageError == nil ? "Download language" : "Retry download"
         case .tryIt: return "Start using Bilby"
         }
@@ -261,7 +261,6 @@ public struct SetupView: View {
     private var actionDisabled: Bool {
         switch model.step {
         case .language: model.isLoadingLanguages || model.preparation != nil
-        case .tryIt: !model.canContinue
         default: false
         }
     }
@@ -273,7 +272,8 @@ public struct SetupView: View {
         case .language where model.languages.isEmpty:
             Task { await model.loadLanguages() }
         case .language where !model.canContinue: model.prepareLanguage()
-        case .tryIt: if model.canContinue { onFinish() }
+        case .language where model.finishesAfterLanguage: onFinish()
+        case .tryIt: onFinish()
         default: model.advance()
         }
     }
