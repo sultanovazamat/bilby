@@ -19,10 +19,11 @@ public enum AudioPermission: Sendable {
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
     )
 
-    public static var isGranted: Bool {
+    public static func check() -> AudioAccess {
         guard let victim = SystemAudioTap.candidates().first?.processes.first else {
-            // Nothing to tap yet says nothing about permission.
-            return false
+            // Nothing to tap yet says nothing about permission, and macOS
+            // has not been asked.
+            return .nothingToProbe
         }
         let description = CATapDescription(stereoMixdownOfProcesses: [victim])
         description.uuid = UUID()
@@ -34,6 +35,8 @@ public enum AudioPermission: Sendable {
         defer { if tap != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tap) } }
 
         if status != noErr { Log.write("permission: tap refused, status \(status)") }
-        return status == noErr
+        return status == noErr ? .granted : .refused
     }
+
+    public static var isGranted: Bool { check() == .granted }
 }

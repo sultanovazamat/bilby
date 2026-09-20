@@ -1,4 +1,5 @@
 import AppKit
+import BilbyCore
 import BilbyUI
 import Foundation
 import SwiftUI
@@ -35,7 +36,7 @@ struct Preview {
             // Walks the real model the way a user would, so every scene is
             // one the app can actually reach.
             let model = SetupModel(
-                checkAudio: { true }, openSettings: {}, startListening: {},
+                checkAudio: { .granted }, openSettings: {}, startListening: {},
                 loadLanguages: {
                     [
                         .init(code: "ru", name: "Russian", isInstalled: false),

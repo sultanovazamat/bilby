@@ -1,3 +1,4 @@
+import BilbyCore
 import Synchronization
 import Testing
 
@@ -12,7 +13,7 @@ struct SetupModelTests {
         let model = SetupModel(
             checkAudio: {
                 checks.withLock { $0 += 1 }
-                return false
+                return .refused
             },
             openSettings: {}, startListening: {}
         )
@@ -27,7 +28,7 @@ struct SetupModelTests {
     func existingGrantIsConfirmed() {
         var openedSettings = false
         let model = SetupModel(
-            checkAudio: { true }, openSettings: { openedSettings = true }, startListening: {}
+            checkAudio: { .granted }, openSettings: { openedSettings = true }, startListening: {}
         )
         model.advance()
         model.requestAudioAccess()
@@ -39,11 +40,28 @@ struct SetupModelTests {
         model.stopWatching()
     }
 
+    @Test("with nothing playing, the page explains and lets the user continue without opening Settings")
+    func nothingToProbe() {
+        var openedSettings = false
+        let model = SetupModel(
+            checkAudio: { .nothingToProbe }, openSettings: { openedSettings = true }, startListening: {}
+        )
+        model.advance()
+        model.requestAudioAccess()
+        #expect(model.audio == .nothingToProbe)
+        #expect(!model.hasAudioAccess)
+        #expect(model.canContinue)
+        #expect(!openedSettings)
+        model.advance()
+        #expect(model.step == .language)
+        model.stopWatching()
+    }
+
     @Test("permission cannot be bypassed into a listening session")
     func deniedPermissionBlocksAdvance() {
         var starts = 0
         let model = SetupModel(
-            checkAudio: { false }, openSettings: {}, startListening: { starts += 1 }
+            checkAudio: { .refused }, openSettings: {}, startListening: { starts += 1 }
         )
         model.advance()
         #expect(!model.canContinue)
@@ -57,7 +75,7 @@ struct SetupModelTests {
     @Test("a grant that exists on arrival is shown as granted, not skipped past")
     func grantOnArrivalIsConfirmed() async {
         let model = SetupModel(
-            checkAudio: { true }, openSettings: {}, startListening: {},
+            checkAudio: { .granted }, openSettings: {}, startListening: {},
             pollInterval: .milliseconds(1)
         )
         model.advance()
@@ -75,7 +93,7 @@ struct SetupModelTests {
             checkAudio: {
                 checks.withLock {
                     $0 += 1
-                    return $0 > 1
+                    return $0 > 1 ? .granted : .refused
                 }
             },
             openSettings: {}, startListening: {}
@@ -92,7 +110,7 @@ struct SetupModelTests {
         let model = SetupModel(
             checkAudio: {
                 checks.withLock { $0 += 1 }
-                return true
+                return .granted
             },
             openSettings: {}, startListening: {}
         )
@@ -144,7 +162,7 @@ struct SetupModelTests {
     func warmsUpOnce() {
         var warmUps = 0
         let model = SetupModel(
-            checkAudio: { true }, openSettings: {}, startListening: {},
+            checkAudio: { .granted }, openSettings: {}, startListening: {},
             loadLanguages: { [.init(code: "fr", name: "French", isInstalled: true)] },
             warmUp: { warmUps += 1 }
         )
@@ -166,7 +184,7 @@ struct SetupModelTests {
     @Test("the default language is the first one the system prefers that Apple can translate into")
     func defaultLanguageFromSystem() async {
         let model = SetupModel(
-            checkAudio: { true }, openSettings: {}, startListening: {},
+            checkAudio: { .granted }, openSettings: {}, startListening: {},
             loadLanguages: {
                 [.init(code: "ru", name: "Russian", isInstalled: false), .init(code: "de", name: "German", isInstalled: false)]
             },
@@ -179,7 +197,7 @@ struct SetupModelTests {
     @Test("an English-only system leaves the choice to the user")
     func englishOnlySystem() async {
         let model = SetupModel(
-            checkAudio: { true }, openSettings: {}, startListening: {},
+            checkAudio: { .granted }, openSettings: {}, startListening: {},
             loadLanguages: { [.init(code: "ru", name: "Russian", isInstalled: true)] },
             preferredLanguages: ["en-US", "en-GB"]
         )
@@ -194,7 +212,7 @@ struct SetupModelTests {
     @Test("a saved choice beats the system preference")
     func savedChoiceWins() async {
         let model = SetupModel(
-            checkAudio: { true }, openSettings: {}, startListening: {},
+            checkAudio: { .granted }, openSettings: {}, startListening: {},
             loadLanguages: {
                 [.init(code: "ru", name: "Russian", isInstalled: true), .init(code: "de", name: "German", isInstalled: true)]
             },
@@ -207,7 +225,7 @@ struct SetupModelTests {
     @Test("setup opened for a language starts there and finishes there")
     func startsAtLanguage() async {
         let model = SetupModel(
-            checkAudio: { true }, openSettings: {}, startListening: {},
+            checkAudio: { .granted }, openSettings: {}, startListening: {},
             loadLanguages: { [.init(code: "fr", name: "French", isInstalled: true)] },
             selectedLanguageCode: "fr", startingAt: .language
         )
@@ -296,7 +314,7 @@ struct SetupModelTests {
     @Test("an empty language list offers retry instead of proceeding")
     func emptyLanguages() async {
         let model = SetupModel(
-            checkAudio: { true }, openSettings: {}, startListening: {}, loadLanguages: { [] }
+            checkAudio: { .granted }, openSettings: {}, startListening: {}, loadLanguages: { [] }
         )
         await reachLanguages(model)
         #expect(!model.canContinue)
@@ -322,7 +340,7 @@ struct SetupModelTests {
         startListening: @escaping () -> Void = {}
     ) -> SetupModel {
         SetupModel(
-            checkAudio: { true }, openSettings: {}, startListening: startListening,
+            checkAudio: { .granted }, openSettings: {}, startListening: startListening,
             loadLanguages: {
                 [
                     .init(code: "ru", name: "Russian", isInstalled: false),

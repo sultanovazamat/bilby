@@ -57,7 +57,8 @@ public final class SetupModel {
     /// Reaching the last page is finishing: closing the window from there
     /// must not bring the whole flow back at the next launch.
     public var isComplete: Bool { step == .tryIt }
-    public private(set) var hasAudioAccess = false
+    public private(set) var audio: AudioAccess = .refused
+    public var hasAudioAccess: Bool { audio == .granted }
     public private(set) var languages: [LanguageChoice] = []
     public private(set) var selectedLanguageCode: String
     public private(set) var isLoadingLanguages = false
@@ -67,7 +68,7 @@ public final class SetupModel {
     /// How far the recogniser is, for the last page.
     public private(set) var readiness: Readiness = .idle
 
-    private let checkAudio: @Sendable () -> Bool
+    private let checkAudio: @Sendable () -> AudioAccess
     private let openSettings: () -> Void
     private let startListening: () -> Void
     private let fetchLanguages: () async -> [LanguageChoice]
@@ -80,7 +81,7 @@ public final class SetupModel {
     private var isActive = true
 
     public init(
-        checkAudio: @escaping @Sendable () -> Bool,
+        checkAudio: @escaping @Sendable () -> AudioAccess,
         openSettings: @escaping () -> Void,
         startListening: @escaping () -> Void,
         loadLanguages: @escaping () async -> [LanguageChoice] = { [] },
@@ -113,7 +114,9 @@ public final class SetupModel {
         guard isActive else { return false }
         switch step {
         case .welcome: return true
-        case .permission: return hasAudioAccess
+        // Nothing to probe is not a refusal: the prompt comes with the first
+        // start, and holding the page hostage until then helps nobody.
+        case .permission: return audio != .refused
         case .language: return selectedLanguage?.isInstalled == true && preparation == nil
         case .tryIt: return true
         }
@@ -156,8 +159,8 @@ public final class SetupModel {
         // Asking and checking are the same act — building a tap is what raises
         // the prompt. If that did not settle it, send the user to the switch:
         // being asked and then left on the same screen is the worst outcome.
-        hasAudioAccess = checkAudio()
-        if !hasAudioAccess { openSettings() }
+        audio = checkAudio()
+        if audio == .refused { openSettings() }
     }
 
     /// Owned by the visible page's SwiftUI task, so leaving or closing the
@@ -171,16 +174,16 @@ public final class SetupModel {
     public func watchPermission() async {
         // A closed page must not probe: probing is what raises the prompt.
         guard isActive, step == .permission else { return }
-        let grantedOnArrival = checkAudio()
-        hasAudioAccess = grantedOnArrival
+        let arrival = checkAudio()
+        audio = arrival
 
         while isActive, step == .permission, !Task.isCancelled {
             do { try await Task.sleep(for: pollInterval) } catch { return }
             guard isActive, step == .permission else { return }
-            let granted = checkAudio()
-            guard granted != hasAudioAccess else { continue }
-            hasAudioAccess = granted
-            if granted, !grantedOnArrival { advance() }
+            let now = checkAudio()
+            guard now != audio else { continue }
+            audio = now
+            if now == .granted, arrival != .granted { advance() }
         }
     }
 

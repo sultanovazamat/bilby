@@ -123,15 +123,22 @@ public struct SetupView: View {
             .padding(.top, 8)
         case .permission:
             VStack(alignment: .leading, spacing: 10) {
-                Label("Allow system audio in the macOS prompt.", systemImage: "speaker.wave.2")
-                Text(
-                    "If access was denied, open System Settings → Privacy & Security → Screen & System Audio Recording and allow Bilby."
-                )
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                Text("No prompt? Play audio in another app. We’ll continue automatically when access is allowed.")
-                    .font(.system(size: 12, weight: .medium))
+                if model.audio == .nothingToProbe {
+                    Label("Nothing is playing yet, so macOS hasn’t asked.", systemImage: "speaker.slash")
+                    Text("It will ask the first time you start captions. Allow it then, and Bilby remembers.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("Allow system audio in the macOS prompt.", systemImage: "speaker.wave.2")
+                    Text(
+                        "If access was denied, open System Settings → Privacy & Security → Screen & System Audio Recording and allow Bilby."
+                    )
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                    Text("We’ll continue automatically when access is allowed.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
             }
             .font(.system(size: 13))
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -261,7 +268,12 @@ public struct SetupView: View {
         // A button labelled "Open Settings" that does nothing because
         // permission is already granted is a broken button. It has to say what
         // pressing it will do, given the state it is actually in.
-        case .permission: return model.hasAudioAccess ? "Continue" : "Open Settings"
+        case .permission:
+            switch model.audio {
+            case .granted: return "Continue"
+            case .nothingToProbe: return "Continue anyway"
+            case .refused: return "Open Settings"
+            }
         case .language:
             if model.isLoadingLanguages { return "Loading…" }
             if model.preparation != nil { return "Preparing…" }
@@ -285,7 +297,7 @@ public struct SetupView: View {
     private func performAction() {
         switch model.step {
         case .permission:
-            if model.hasAudioAccess { model.advance() } else { model.requestAudioAccess() }
+            if model.audio == .refused { model.requestAudioAccess() } else { model.advance() }
         case .language where model.languages.isEmpty:
             Task { await model.loadLanguages() }
         case .language where !model.canContinue: model.prepareLanguage()

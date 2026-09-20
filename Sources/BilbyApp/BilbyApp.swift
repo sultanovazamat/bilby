@@ -108,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         setup?.close()
         let model = SetupModel(
-            checkAudio: { AudioPermission.isGranted },
+            checkAudio: { AudioPermission.check() },
             openSettings: { [weak self] in self?.openPermissionSettings() },
             // The last step listens for real: the app proves itself instead of
             // describing itself.

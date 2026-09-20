@@ -83,3 +83,12 @@ public enum Readiness: Equatable, Sendable {
     /// Ready or failed: a warm-up that has finished one way or the other.
     public var isSettled: Bool { self == .ready || isFailure }
 }
+
+/// What a probe of the system-audio permission found.
+public enum AudioAccess: Equatable, Sendable {
+    case granted
+    case refused
+    /// No app has played audio yet, so there was nothing to probe and macOS
+    /// has not been asked. Not a refusal.
+    case nothingToProbe
+}
