@@ -48,6 +48,17 @@ public struct MenuState: Equatable, Sendable {
     /// app again stops.
     public var checkedApp: String? { listening?.id }
 
+    /// The line at the top: what is being captioned, and what it is being
+    /// read in. Menus are built once when they open and cannot animate, so
+    /// the live signal stays on the menu bar icon; this is the state.
+    public var header: String? {
+        guard let listening else { return nil }
+        guard let target, let language = languages.first(where: { $0.code == target })?.name else {
+            return listening.name
+        }
+        return "\(listening.name) → \(language)"
+    }
+
     public var installedLanguages: [Language] { languages.filter(\.isInstalled) }
     /// Names the direction, not the noun: the submenu under it is a list of
     /// languages, so calling it "Language" said the same word twice.

@@ -32,6 +32,19 @@ struct MenuStateTests {
         #expect(menu.statusLine == "Downloading speech recognition, 40%")
     }
 
+    @Test("the top line says what is running, and says nothing when nothing is")
+    func header() {
+        var menu = MenuState()
+        menu.apps = [zoom]
+        menu.languages = [.init(code: "ru", name: "Russian", isInstalled: true)]
+        menu.target = "ru"
+        #expect(menu.header == nil)
+        menu.listening = zoom
+        #expect(menu.header == "Zoom → Russian")
+        menu.target = nil
+        #expect(menu.header == "Zoom")
+    }
+
     @Test("a refused tap offers the fix after the session has ended")
     func permissionRefused() {
         var menu = MenuState()

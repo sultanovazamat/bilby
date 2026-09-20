@@ -18,6 +18,18 @@ struct BilbyApp: App {
             Color.clear.frame(height: 0).onAppear { delegate.menuOpened() }
             let menu = delegate.menu
 
+            // What is running, before anything asking to change it.
+            if let header = menu.header {
+                Label {
+                    Text(header)
+                } icon: {
+                    if let id = menu.listening?.id, let icon = delegate.icon(for: id) {
+                        Image(nsImage: icon)
+                    }
+                }
+                Divider()
+            }
+
             // The only way in. Naming one app on a line of its own meant
             // guessing which of several was meant, and the guess was
             // alphabetical.
@@ -261,6 +273,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.panel = CaptionPanel(content: CaptionBar(model: model, perform: controls))
         self.history = HistoryPanel(content: HistoryView(model: model, perform: controls))
         refreshSources()
+        // Asked for now rather than when the menu opens: an AppKit menu is
+        // built from whatever the state holds at the moment it opens, so a
+        // list that arrives a heartbeat later arrives to a menu that has
+        // already been built, and the submenu shows nothing. It costs 155 ms,
+        // measured, and never runs again unless something changes.
+        refreshLanguages()
         if !UserDefaults.standard.bool(forKey: "didSetUp") { showSetup() }
     }
 
@@ -291,7 +309,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 400 MB every login, before anyone had asked for anything.
     func menuOpened() {
         refreshSources()
-        Task { languages = await Languages.available() }
+        refreshLanguages()
         pipeline = diagnostics.state
         warm()
     }
@@ -320,6 +338,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         target = Language(code)
         UserDefaults.standard.set(code, forKey: "targetLanguage")
         Log.write("language: translating into \(code)")
+        // A language just downloaded is installed now, and the menu should
+        // say so without waiting to be opened twice.
+        refreshLanguages()
+    }
+
+    /// Which languages Apple can translate English into, and which are
+    /// already downloaded.
+    func refreshLanguages() {
+        Task { languages = await Languages.available() }
     }
 
     func refreshSources() {
