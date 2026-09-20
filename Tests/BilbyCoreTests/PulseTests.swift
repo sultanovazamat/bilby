@@ -57,6 +57,16 @@ struct PulseTests {
         #expect(!noise.contains("silent"))
     }
 
+    @Test("a stage that cannot hear says nothing about whether there was sound")
+    func deafStageStaysQuiet() throws {
+        let pulse = Pulse()
+        pulse.heard()
+        let report = try #require(pulse.report(stage: "captions", after: .zero))
+        #expect(report.contains("nothing recognised"))
+        #expect(!report.contains("silent"))
+        #expect(!report.contains("playing"))
+    }
+
     @Test("a long limit means a working pipeline stays quiet")
     func patientLimit() {
         let pulse = Pulse()

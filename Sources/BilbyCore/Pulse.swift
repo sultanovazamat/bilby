@@ -18,6 +18,9 @@ public final class Pulse: Sendable {
         /// Loudest sample since the last report. A frame count cannot tell
         /// a paused video from a recogniser that has given up; this can.
         var peak: Float = 0
+        /// Whether this stage sees audio at all. The caption loop does not,
+        /// and a stage that cannot hear must not report silence.
+        var listens = false
         /// A stall is said once, not every time it is looked at.
         var announced = false
     }
@@ -28,7 +31,10 @@ public final class Pulse: Sendable {
 
     /// Audio arrived, and how loud it was.
     public func sawAudio(peak: Float) {
-        state.withLock { $0.peak = max($0.peak, peak) }
+        state.withLock {
+            $0.peak = max($0.peak, peak)
+            $0.listens = true
+        }
     }
 
     /// Speech reached the engine.
@@ -64,7 +70,7 @@ public final class Pulse: Sendable {
             } else if state.utterances > 0, now - state.lastUtterance >= limit {
                 problem =
                     "nothing recognised for \(Self.seconds(now - state.lastUtterance))"
-                    + Self.sound(state.peak)
+                    + (state.listens ? Self.sound(state.peak) : "")
             }
             state.peak = 0
 

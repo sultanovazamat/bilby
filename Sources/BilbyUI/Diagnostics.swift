@@ -9,19 +9,37 @@ import Foundation
 public final class Diagnostics: @unchecked Sendable {
     private let lock = NSLock()
     private var frames = 0
+    private var firstFrameAt: ContinuousClock.Instant?
     private var utterances = 0
     private var lines = 0
     private var failure: String?
 
     public init() {}
 
-    public func audio(_ count: Int) { mutate { frames += count } }
+    public func audio(_ count: Int) {
+        mutate {
+            if firstFrameAt == nil { firstFrameAt = ContinuousClock.now }
+            frames += count
+        }
+    }
+
+    /// When the first buffer actually arrived.
+    ///
+    /// An aggregate device around a process tap took ten seconds to deliver
+    /// anything, measured, and the audio clock starts at that first buffer.
+    /// Timing captions from when the session was asked for counted that wait
+    /// as if it were delay in the pipeline, and made a 0.4 s pipeline look
+    /// like a twelve-second one.
+    public var startedAt: ContinuousClock.Instant? {
+        lock.lock(); defer { lock.unlock() }
+        return firstFrameAt
+    }
     public func heardSomething() { mutate { utterances += 1 } }
     public func committedLine() { mutate { lines += 1 } }
     public func failed(_ reason: String) { mutate { failure = reason } }
 
     public func reset() {
-        mutate { frames = 0; utterances = 0; lines = 0; failure = nil }
+        mutate { frames = 0; utterances = 0; lines = 0; failure = nil; firstFrameAt = nil }
     }
 
     /// The first stage that is empty. `StatusText` turns it into a sentence.

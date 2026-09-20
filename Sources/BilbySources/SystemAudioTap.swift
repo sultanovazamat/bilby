@@ -290,7 +290,7 @@ private final class Capture: @unchecked Sendable {
         description.isPrivate = true
 
         let tapStatus = AudioHardwareCreateProcessTap(description, &tap)
-        guard tapStatus == noErr else { return fail("create tap \\(SystemAudioTap.describe(tapStatus))") }
+        guard tapStatus == noErr else { return fail("create tap \(SystemAudioTap.describe(tapStatus))") }
         guard let format = SystemAudioTap.tapFormat(tap) else { return fail("tap reported no audio format") }
         guard let outputUID = SystemAudioTap.currentOutputUID else { return fail("no default output device") }
 
@@ -298,7 +298,7 @@ private final class Capture: @unchecked Sendable {
             SystemAudioTap.aggregateDescription(tapUUID: description.uuid, outputUID: outputUID),
             &aggregate)
         guard aggregateStatus == noErr else {
-            return fail("create aggregate \\(SystemAudioTap.describe(aggregateStatus))")
+            return fail("create aggregate \(SystemAudioTap.describe(aggregateStatus))")
         }
 
         let arrived = FrameCounter()
@@ -335,14 +335,14 @@ private final class Capture: @unchecked Sendable {
             hand(copy)
         }
         guard status == noErr, let proc else {
-            return fail("create io proc \\(SystemAudioTap.describe(status))")
+            return fail("create io proc \(SystemAudioTap.describe(status))")
         }
         let startStatus = AudioDeviceStart(aggregate, proc)
-        guard startStatus == noErr else { return fail("start device \\(SystemAudioTap.describe(startStatus))") }
+        guard startStatus == noErr else { return fail("start device \(SystemAudioTap.describe(startStatus))") }
 
         tapped = current
         output = outputUID
-        Log.write("tap: running on \\(current) — \\(format.sampleRate) Hz, \\(format.channelCount) ch")
+        Log.write("tap: running on \(current) — \(format.sampleRate) Hz, \(format.channelCount) ch")
     }
 
     private func close() {
@@ -359,13 +359,13 @@ private final class Capture: @unchecked Sendable {
 
     private func rebuild(_ reason: String) {
         guard running else { return }
-        Log.write("tap: rebuilding — \\(reason)")
+        Log.write("tap: rebuilding — \(reason)")
         close()
         open()
     }
 
     private func fail(_ reason: String) {
-        Log.write("tap: FAILED — \\(reason)")
+        Log.write("tap: FAILED — \(reason)")
         onFailure?(reason)
         giveUp()
     }
@@ -379,7 +379,7 @@ private final class Capture: @unchecked Sendable {
         watch(system, kAudioHardwarePropertyProcessObjectList) { [self] in
             let current = processes()
             guard !current.isEmpty, current != tapped else { return }
-            rebuild("\\(tapped) became \\(current)")
+            rebuild("\(tapped) became \(current)")
         }
         watch(system, kAudioHardwarePropertyDefaultSystemOutputDevice) { [self] in
             guard let now = SystemAudioTap.currentOutputUID, now != output else { return }
@@ -398,7 +398,7 @@ private final class Capture: @unchecked Sendable {
         // cannot overlap another.
         let block: AudioObjectPropertyListenerBlock = { _, _ in handler() }
         guard AudioObjectAddPropertyListenerBlock(object, &address, queue, block) == noErr else {
-            Log.write("tap: could not watch property \\(selector)")
+            Log.write("tap: could not watch property \(selector)")
             return
         }
         listeners.append((object, address, block))

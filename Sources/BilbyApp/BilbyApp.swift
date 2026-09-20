@@ -450,9 +450,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // Wall clock against the audio clock: `line.at` is when the words
             // were spoken, so the difference is what the user actually waits.
-            let started = ContinuousClock.now
             func lag(_ spokenAt: Duration) -> String {
-                let elapsed = ContinuousClock.now - started
+                // Measured from the first buffer, which is where the audio
+                // clock starts too.
+                guard let began = counter.startedAt else { return "?" }
+                let elapsed = ContinuousClock.now - began
                 let seconds =
                     Double((elapsed - spokenAt).components.seconds)
                     + Double((elapsed - spokenAt).components.attoseconds) / 1e18
