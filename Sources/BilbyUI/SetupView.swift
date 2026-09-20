@@ -176,6 +176,14 @@ public struct SetupView: View {
             .padding(16)
             .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
             .accessibilityElement(children: .combine)
+
+            Toggle(
+                "Open Bilby when I log in",
+                isOn: Binding(get: { model.opensAtLogin }, set: { model.setOpensAtLogin($0) })
+            )
+            .toggleStyle(.checkbox)
+            .font(.system(size: 13))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

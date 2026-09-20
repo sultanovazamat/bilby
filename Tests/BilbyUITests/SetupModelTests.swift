@@ -222,6 +222,19 @@ struct SetupModelTests {
         #expect(model.selectedLanguageCode == "ru")
     }
 
+    @Test("the login-item choice is passed on")
+    func loginItem() {
+        var recorded: Bool?
+        let model = SetupModel(
+            checkAudio: { .granted }, openSettings: {}, startListening: {},
+            setOpensAtLogin: { recorded = $0 }
+        )
+        #expect(!model.opensAtLogin)
+        model.setOpensAtLogin(true)
+        #expect(model.opensAtLogin)
+        #expect(recorded == true)
+    }
+
     @Test("setup opened for a language starts there and finishes there")
     func startsAtLanguage() async {
         let model = SetupModel(

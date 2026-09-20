@@ -65,12 +65,15 @@ public final class SetupModel {
     public private(set) var languageError: String?
     public private(set) var preparation: Preparation?
     public private(set) var caption: (source: String, translation: String)?
+    /// Whether Bilby starts at login, offered on the last page.
+    public private(set) var opensAtLogin: Bool
     /// How far the recogniser is, for the last page.
     public private(set) var readiness: Readiness = .idle
 
     private let checkAudio: @Sendable () -> AudioAccess
     private let openSettings: () -> Void
     private let startListening: () -> Void
+    private let loginItemHandler: (Bool) -> Void
     private let fetchLanguages: () async -> [LanguageChoice]
     private let selectTarget: (String) -> Void
     private let warmUp: () -> Void
@@ -84,6 +87,8 @@ public final class SetupModel {
         checkAudio: @escaping @Sendable () -> AudioAccess,
         openSettings: @escaping () -> Void,
         startListening: @escaping () -> Void,
+        opensAtLogin: Bool = false,
+        setOpensAtLogin: @escaping (Bool) -> Void = { _ in },
         loadLanguages: @escaping () async -> [LanguageChoice] = { [] },
         selectTarget: @escaping (String) -> Void = { _ in },
         warmUp: @escaping () -> Void = {},
@@ -97,6 +102,8 @@ public final class SetupModel {
         self.checkAudio = checkAudio
         self.openSettings = openSettings
         self.startListening = startListening
+        self.opensAtLogin = opensAtLogin
+        self.loginItemHandler = setOpensAtLogin
         self.fetchLanguages = loadLanguages
         self.selectTarget = selectTarget
         self.warmUp = warmUp
@@ -147,6 +154,11 @@ public final class SetupModel {
 
     public func update(readiness: Readiness) {
         self.readiness = readiness
+    }
+
+    public func setOpensAtLogin(_ on: Bool) {
+        opensAtLogin = on
+        loginItemHandler(on)
     }
 
     public func show(_ source: String, _ translation: String) {

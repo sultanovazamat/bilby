@@ -171,6 +171,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The last step listens for real: the app proves itself instead of
             // describing itself.
             startListening: { [weak self] in self?.listenToWhateverPlays() },
+            opensAtLogin: LoginItem.isEnabled,
+            setOpensAtLogin: { LoginItem.set($0) },
             loadLanguages: {
                 await Languages.available().map {
                     SetupModel.LanguageChoice(code: $0.code, name: $0.name, isInstalled: $0.isInstalled)
