@@ -1,3 +1,4 @@
+import BilbyCore
 import SwiftUI
 
 /// Four short scenes, ending with real captions. Motion lives in the view so
@@ -140,12 +141,9 @@ public struct SetupView: View {
             languageContent
         case .tryIt:
             VStack(alignment: .leading, spacing: 8) {
-                Label(
-                    model.caption == nil ? "Listening for your first words" : "Your live captions",
-                    systemImage: "waveform"
-                )
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
+                Label(tryItHeading, systemImage: "waveform")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
                 if let caption = model.caption {
                     Text(caption.source)
                         .font(.system(size: 12))
@@ -154,6 +152,13 @@ public struct SetupView: View {
                     Text(caption.translation)
                         .font(.system(size: 16, weight: .medium, design: .rounded))
                         .lineLimit(3)
+                } else if case .failed(let message) = model.readiness {
+                    Text(message).font(.system(size: 13)).foregroundStyle(.secondary)
+                    Button("Retry") { model.retryWarmUp() }.font(.system(size: 12))
+                } else if case .downloading = model.readiness {
+                    Text("About 600 MB, once. Bilby works offline after this.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
                 } else {
                     Text("Try a browser video with speech. Keep its sound on.")
                         .font(.system(size: 13))
@@ -165,6 +170,12 @@ public struct SetupView: View {
             .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
             .accessibilityElement(children: .combine)
         }
+    }
+
+    private var tryItHeading: String {
+        if model.caption != nil { return "Your live captions" }
+        if model.readiness == .ready { return "Listening for your first words" }
+        return StatusText.waiting(readiness: model.readiness, app: nil)
     }
 
     private var languageContent: some View {

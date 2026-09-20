@@ -31,15 +31,37 @@ public struct UnifiedTranscriber: AudioTranscribing {
         UnifiedConfig(chunkFrames: 2, rightFrames: 2)
     }
 
-    public func warmUp() async {
+    public func warmUp(progress: @escaping @Sendable (Readiness) -> Void) async -> Readiness {
         let started = ContinuousClock.now
         Log.write("asr: warming up…")
+        progress(.preparing)
         do {
-            try await StreamingUnifiedAsrManager(config: config).loadModels()
+            try await StreamingUnifiedAsrManager(config: config).loadModels(
+                to: nil, configuration: nil,
+                progressHandler: { update in
+                    // Below 1 the files are still arriving. At 1 CoreML compiles
+                    // for this machine, which reports nothing until it is done.
+                    progress(update.fractionCompleted < 1 ? .downloading(update.fractionCompleted) : .preparing)
+                })
             Log.write("asr: warm in \(ContinuousClock.now - started)")
+            progress(.ready)
+            return .ready
         } catch {
             Log.write("asr: FAILED to warm — \(error)")
+            let failed = Readiness.failed(Self.explain(error))
+            progress(failed)
+            return failed
         }
+    }
+
+    /// One sentence a person can act on. The error itself goes to the log.
+    static func explain(_ error: Error) -> String {
+        let text = String(describing: error).lowercased()
+        let offline = ["offline", "internet", "network", "hostname", "-1009", "-1001", "timed out"]
+        if offline.contains(where: text.contains) {
+            return "Speech recognition needs a one-time download. Connect to the internet and try again."
+        }
+        return "Speech recognition couldn’t be set up. Try again."
     }
 
     public func utterances(

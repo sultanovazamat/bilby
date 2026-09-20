@@ -140,6 +140,29 @@ struct SetupModelTests {
         #expect(model.isComplete)
     }
 
+    @Test("reaching the language page asks for the recogniser once, and retry asks again")
+    func warmsUpOnce() {
+        var warmUps = 0
+        let model = SetupModel(
+            checkAudio: { true }, openSettings: {}, startListening: {},
+            loadLanguages: { [.init(code: "fr", name: "French", isInstalled: true)] },
+            warmUp: { warmUps += 1 }
+        )
+        model.advance()
+        model.requestAudioAccess()
+        model.advance()
+        #expect(warmUps == 1)
+        #expect(model.readiness == .preparing)
+        model.advance()
+        #expect(warmUps == 1)
+        model.update(readiness: .failed("No network."))
+        #expect(model.readiness == .failed("No network."))
+        model.retryWarmUp()
+        #expect(warmUps == 2)
+        #expect(model.readiness == .preparing)
+        model.stopWatching()
+    }
+
     @Test("setup opened for a language starts there and finishes there")
     func startsAtLanguage() async {
         let model = SetupModel(

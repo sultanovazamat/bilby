@@ -1,3 +1,4 @@
+import BilbyCore
 import Foundation
 import Observation
 
@@ -63,12 +64,16 @@ public final class SetupModel {
     public private(set) var languageError: String?
     public private(set) var preparation: Preparation?
     public private(set) var caption: (source: String, translation: String)?
+    /// How far the recogniser is, for the last page.
+    public private(set) var readiness: Readiness = .idle
 
     private let checkAudio: @Sendable () -> Bool
     private let openSettings: () -> Void
     private let startListening: () -> Void
     private let fetchLanguages: () async -> [LanguageChoice]
     private let selectTarget: (String) -> Void
+    private let warmUp: () -> Void
+    private var hasWarmedUp = false
     /// How often the permission page re-checks. Tests shorten it.
     private let pollInterval: Duration
     private var isActive = true
@@ -79,6 +84,7 @@ public final class SetupModel {
         startListening: @escaping () -> Void,
         loadLanguages: @escaping () async -> [LanguageChoice] = { [] },
         selectTarget: @escaping (String) -> Void = { _ in },
+        warmUp: @escaping () -> Void = {},
         selectedLanguageCode: String = "ru",
         startingAt: Step = .welcome,
         pollInterval: Duration = .seconds(1)
@@ -90,8 +96,10 @@ public final class SetupModel {
         self.startListening = startListening
         self.fetchLanguages = loadLanguages
         self.selectTarget = selectTarget
+        self.warmUp = warmUp
         self.selectedLanguageCode = selectedLanguageCode
         self.pollInterval = pollInterval
+        if startingAt.rawValue >= Step.language.rawValue { ensureWarm() }
     }
 
     public var selectedLanguage: LanguageChoice? {
@@ -112,7 +120,27 @@ public final class SetupModel {
         guard canContinue, let next = Step(rawValue: step.rawValue + 1) else { return }
         if step == .language { selectTarget(selectedLanguageCode) }
         step = next
+        if next == .language { ensureWarm() }
         if next == .tryIt { startListening() }
+    }
+
+    /// Asked for once, when the user has committed by reaching the language
+    /// page, so the recogniser is usually ready by the last page.
+    public func ensureWarm() {
+        guard isActive, !hasWarmedUp else { return }
+        hasWarmedUp = true
+        readiness = .preparing
+        warmUp()
+    }
+
+    public func retryWarmUp() {
+        guard isActive else { return }
+        readiness = .preparing
+        warmUp()
+    }
+
+    public func update(readiness: Readiness) {
+        self.readiness = readiness
     }
 
     public func show(_ source: String, _ translation: String) {

@@ -24,6 +24,8 @@ public struct CaptionBar: View {
         model.live.isEmpty && model.latest == nil && model.draft.isEmpty
     }
 
+    private var hidden: Bool { isEmpty && model.status == nil }
+
     /// While a sentence is still being spoken its provisional translation is
     /// shown, dimmed. The settled one replaces it a beat later, at full
     /// weight. Waiting for the settled text costs 1.2 s of silence.
@@ -57,6 +59,12 @@ public struct CaptionBar: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .contentTransition(.interpolate)
             }
+
+            if isEmpty, let status = model.status {
+                Label(status, systemImage: "waveform")
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
@@ -72,10 +80,10 @@ public struct CaptionBar: View {
                 }
                 .shadow(color: .black.opacity(0.25), radius: 18, y: 6)
         }
-        .opacity(isEmpty ? 0 : 1)
-        .scaleEffect(isEmpty ? 0.97 : 1, anchor: .bottom)
-        .blur(radius: isEmpty ? 6 : 0)
-        .animation(.smooth(duration: 0.28), value: isEmpty)
+        .opacity(hidden ? 0 : 1)
+        .scaleEffect(hidden ? 0.97 : 1, anchor: .bottom)
+        .blur(radius: hidden ? 6 : 0)
+        .animation(.smooth(duration: 0.28), value: hidden)
         .animation(.smooth(duration: 0.18), value: translation?.text)
         .animation(.easeOut(duration: 0.12), value: model.live)
     }

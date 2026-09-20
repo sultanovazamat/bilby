@@ -63,3 +63,23 @@ extension StringProtocol {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
     var wordCount: Int { split(whereSeparator: \.isWhitespace).count }
 }
+
+/// How far the speech recogniser is from being able to caption.
+public enum Readiness: Equatable, Sendable {
+    case idle
+    /// Fetching the model, 0…1. Happens once per machine.
+    case downloading(Double)
+    /// Compiling for this machine. Nothing to report until it is done.
+    case preparing
+    case ready
+    /// One sentence a person can act on. The full error is in the log.
+    case failed(String)
+
+    public var isFailure: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+
+    /// Ready or failed: a warm-up that has finished one way or the other.
+    public var isSettled: Bool { self == .ready || isFailure }
+}

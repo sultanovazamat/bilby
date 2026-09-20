@@ -11,18 +11,19 @@ public protocol AudioTranscribing: Sendable {
         from source: @escaping @Sendable () -> AsyncStream<AVAudioPCMBuffer>
     ) -> AsyncStream<Utterance>
 
-    /// Loads the models before anyone asks for captions.
+    /// Loads the models before anyone asks for captions, reporting how far
+    /// along it is, and returns the final state.
     ///
-    /// Unified takes 50 s on a cold start. Doing that inside the listening
-    /// task meant the audio tap opened fifty seconds after the user pressed
-    /// play — by which time the app they wanted to hear had stopped playing.
+    /// Unified takes 50 s on a cold start and 580 MB on a fresh machine.
+    /// Doing that silently inside the listening task meant the bar stayed
+    /// invisible and the menu said "no audio" while the model downloaded.
     /// CoreML caches the compiled result, so warming up once makes the real
     /// start immediate.
-    func warmUp() async
+    func warmUp(progress: @escaping @Sendable (Readiness) -> Void) async -> Readiness
 }
 
 extension AudioTranscribing {
-    public func warmUp() async {}
+    public func warmUp(progress: @escaping @Sendable (Readiness) -> Void) async -> Readiness { .ready }
 }
 
 /// Tracks how far into the call the audio has reached, so a recognition result

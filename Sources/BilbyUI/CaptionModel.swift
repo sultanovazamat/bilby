@@ -12,6 +12,8 @@ public final class CaptionModel {
     /// Provisional translation of the sentence being spoken. This one may
     /// change — it is shown differently so the reader knows.
     public private(set) var draft = ""
+    /// Shown while the bar has no words: what Bilby is doing instead.
+    public var status: String?
 
     /// Hidden by the menu bar. The panel stays alive so captions keep flowing
     /// underneath — reappearing is instant rather than a cold start.
@@ -24,6 +26,7 @@ public final class CaptionModel {
         live = ""
         lines = []
         draft = ""
+        status = nil
     }
 
     public var latest: Line? { lines.last }
@@ -32,6 +35,7 @@ public final class CaptionModel {
         switch event {
         case .live(let text):
             live = text
+            if !text.isEmpty { status = nil }
         case .line(let line):
             lines.append(line)
         case .translated(let id, let text):

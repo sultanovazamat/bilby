@@ -67,7 +67,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var sources: [AudioApp] = []
     private(set) var languages: [Languages.Entry] = []
     private(set) var target = Language(UserDefaults.standard.string(forKey: "targetLanguage") ?? "ru")
-    @ObservationIgnored private var isWarm = false
+    /// How far the recogniser is. Drives the bar's status line and the
+    /// last setup page.
+    private(set) var readiness: Readiness = .idle {
+        didSet {
+            setupModel?.update(readiness: readiness)
+            refreshStatus()
+        }
+    }
+    @ObservationIgnored private var warming: Task<Readiness, Never>?
+    /// Which start is current, so a stream that ends late cannot finish a
+    /// session that replaced it.
+    @ObservationIgnored private var generation = 0
     @ObservationIgnored private var listening: AudioApp?
     @ObservationIgnored private var setup: SetupWindow?
     @ObservationIgnored private var setupModel: SetupModel?
@@ -107,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             },
             selectTarget: { [weak self] code in self?.chooseTarget(code) },
+            warmUp: { [weak self] in self?.warm() },
             selectedLanguageCode: language ?? target.code,
             startingAt: step
         )
@@ -164,11 +176,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !UserDefaults.standard.bool(forKey: "didSetUp") { showSetup() }
     }
 
-    /// Loads the chosen engine's models in the background, so pressing play
-    /// opens the audio tap immediately instead of fifty seconds later.
-    private func warmUp() {
-        let transcriber = UnifiedTranscriber(onAudio: { [diagnostics] in diagnostics.audio($0) })
-        Task.detached { await transcriber.warmUp() }
+    /// Loads the recogniser once. Listening awaits the same task, so pressing
+    /// Start during a download waits for it instead of starting a second one.
+    @discardableResult
+    func warm() -> Task<Readiness, Never> {
+        if let warming, !readiness.isFailure { return warming }
+        readiness = .preparing
+        let transcriber = UnifiedTranscriber()
+        // The delegate lives as long as the app, so capturing it is fine; a
+        // weak capture cannot be referenced from the nested closures below.
+        let task = Task.detached { () -> Readiness in
+            let final = await transcriber.warmUp { partial in
+                Task { @MainActor in
+                    guard !self.readiness.isSettled else { return }
+                    self.readiness = partial
+                }
+            }
+            await MainActor.run { self.readiness = final }
+            return final
+        }
+        warming = task
+        return task
     }
 
     /// Opening the menu means the user is about to act, which is the moment
@@ -177,9 +205,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func menuOpened() {
         refreshSources()
         Task { languages = await Languages.available() }
-        guard !isWarm else { return }
-        isWarm = true
-        warmUp()
+        warm()
+    }
+
+    /// The bar's line while it has no words to show.
+    private func refreshStatus() {
+        guard isListening, model.lines.isEmpty, model.live.isEmpty else {
+            model.status = nil
+            return
+        }
+        model.status = StatusText.waiting(readiness: readiness, app: listening?.name)
     }
 
     /// Shown only when the pipeline is stuck, so the menu stays quiet when
@@ -238,6 +273,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func stop() {
         running?.cancel()
         running = nil
+        finish()
+    }
+
+    /// The stream ended, by Stop or by itself. Either way the menu must not
+    /// keep offering Stop for something that is no longer running.
+    private func finish() {
         isListening = false
         model.clear()
         panel?.orderOut(nil)
@@ -252,7 +293,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let counter = diagnostics
         let chosenTarget = target
-        running = Task {
+        generation += 1
+        let mine = generation
+        running = Task { [weak self] in
+            guard let self else { return }
+            refreshStatus()
+            let ready = await warm().value
+            guard ready == .ready, !Task.isCancelled else {
+                if generation == mine { finish() }
+                return
+            }
             // Wall clock against the audio clock: `line.at` is when the words
             // were spoken, so the difference is what the user actually waits.
             let started = ContinuousClock.now
@@ -290,6 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 model.apply(event)
                 panel?.fitContent()
             }
+            if generation == mine { finish() }
         }
     }
 }
