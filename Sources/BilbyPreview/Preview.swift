@@ -48,6 +48,11 @@ struct Preview {
             model.advance()
             model.requestAudioAccess()
             try snap(model, "permission")
+            let quiet = SetupModel(checkAudio: { .nothingToProbe }, openSettings: {}, startListening: {})
+            quiet.advance()
+            quiet.requestAudioAccess()
+            try snap(quiet, "permission-nothing-playing")
+            quiet.stopWatching()
             model.advance()
             await model.loadLanguages()
             try snap(model, "language")
@@ -61,7 +66,14 @@ struct Preview {
             model.prepareLanguage()
             if let request = model.preparation { model.completePreparation(request, error: nil) }
             model.advance()
+            model.update(readiness: .ready)
             try snap(model, "tryIt")
+            model.update(readiness: .downloading(0.43))
+            try snap(model, "tryIt-downloading")
+            model.update(
+                readiness: .failed("Speech recognition needs a one-time download. Connect to the internet and try again."))
+            try snap(model, "tryIt-failed")
+            model.update(readiness: .ready)
             model.show(
                 "Let’s make sure everyone can follow the conversation.",
                 "Давайте убедимся, что все могут следить за разговором.")

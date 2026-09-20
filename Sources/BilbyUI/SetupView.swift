@@ -18,7 +18,7 @@ public struct SetupView: View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
                 BilbyMark().fill(.primary).frame(width: 22, height: 22)
-                Text("bilby").font(.system(size: 17, weight: .semibold, design: .rounded))
+                Text("Bilby").font(.system(size: 17, weight: .semibold, design: .rounded))
                 Spacer()
             }
             .accessibilityElement(children: .combine)
@@ -107,7 +107,7 @@ public struct SetupView: View {
         case .welcome: "Bilby lives in the menu bar, with no icon in the Dock.\nClick it whenever you want captions."
         case .permission: "Bilby needs permission to hear audio from other apps.\nYour microphone is never used."
         case .language: "Choose the language you’d like to read.\nTranslation happens right here on your Mac."
-        case .tryIt: "Click Bilby in the menu bar, choose what to listen to,\nand captions appear at the bottom of your screen."
+        case .tryIt: "Play something with speech and captions appear at the bottom\nof your screen. Later, start them from Bilby in the menu bar."
         }
     }
 
@@ -115,7 +115,7 @@ public struct SetupView: View {
         switch model.step {
         case .welcome:
             VStack(alignment: .leading, spacing: 13) {
-                detail("Always in the menu bar, never in the Dock", symbol: "menubar.arrow.up.rectangle")
+                detail("Captions at the bottom of your screen", symbol: "captions.bubble")
                 detail("Works with the apps you already use", symbol: "macwindow")
                 detail("Your audio stays on this Mac", symbol: "lock.shield")
                 detail("No account. No microphone.", symbol: "mic.slash")
@@ -190,6 +190,8 @@ public struct SetupView: View {
     private var tryItHeading: String {
         if model.caption != nil { return "Your live captions" }
         if model.readiness == .ready { return "Listening for your first words" }
+        // The sentence itself goes in the body, next to Retry.
+        if model.readiness.isFailure { return "Speech recognition isn’t ready" }
         return StatusText.waiting(readiness: model.readiness, app: nil)
     }
 

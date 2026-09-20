@@ -35,13 +35,18 @@ late and captions lag.
 ## Build
 
 ```
-swift test                     # 20 tests, no hardware required
-./Scripts/check-core-purity.sh # core must not import platform frameworks
+swift test                      # 64 tests, no hardware required
+./Scripts/check-core-purity.sh  # core must not import platform frameworks
+./Scripts/make-app.sh           # ~/Applications/Bilby.app, debug build
+./Scripts/check-app-portable.sh # the app must run with this checkout unreadable
+./Scripts/release.sh            # Bilby.dmg: release build, checked, ad-hoc signed
+swift run BilbyPreview --output .build/previews   # every setup scene, both caption modes
 ```
 
 ## Status
 
-M0 complete: core, tests, purity gate.
-M1 in progress — see `docs/plans/2026-09-16-m1-spike-findings.md`.
-Settled: language coverage (9 source, 22 target), `TranslationSession` works
-outside SwiftUI, no app bundle needed. Open: end-to-end latency.
+Live captions and translation work end to end (M1 findings in
+`docs/plans/2026-09-16-m1-spike-findings.md`; engine choice in
+`docs/plans/2026-09-16-engine-choice.md`). The first run, the menu and the
+history panel follow `docs/plans/2026-09-20-first-run-menu-and-history-panel-design.md`.
+Not done: "explain", a signed and notarised build, text size and bar position.
