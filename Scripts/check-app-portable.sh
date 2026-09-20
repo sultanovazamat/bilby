@@ -16,6 +16,7 @@ PID=$!
 sleep 6
 if kill -0 "$PID" 2>/dev/null; then
     kill "$PID"
+    wait "$PID" 2>/dev/null || true  # keeps the shell from announcing "Terminated"
 else
     echo "✗ $APP died without $ROOT:"
     cat "$LOG"
