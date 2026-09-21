@@ -17,16 +17,17 @@ product can be tested with strings — no audio, no network, no Apple Intelligen
 ```
 edges (untestable)              core (pure, covered by tests)        ui
 ──────────────────              ─────────────────────────────        ──────────────
-AudioSource    (CoreAudio)  ─┐
-Transcribing   (Speech)     ─┼──▶  CaptionSession            ──▶   CaptionPanel
-Translating    (Translation)─┤       └── CaptionEngine              MenuBarExtra
-Explaining     (FoundationM)─┘             ├── ClauseBuffer
-                                           └── Transcript
+SystemAudioTap    (CoreAudio) ─┐
+AudioTranscribing (FluidAudio)─┼──▶  CaptionSession          ──▶   CaptionPanel
+Translating       (Translation)┘       └── CaptionEngine            MenuBarExtra
+                                             ├── ClauseBuffer
+                                             └── Transcript
 ```
 
-Each edge is a protocol in `Ports.swift` with a real implementation and a fake.
-Adding microphone capture is a new `AudioSource`; swapping translation for a
-local model is a new `Translating`. The core does not change.
+Each edge the core depends on is a protocol with a real implementation and a
+fake: `Translating` in `Ports.swift`, `AudioTranscribing` in BilbySources.
+Swapping translation for a local model is a new `Translating`. The core does
+not change.
 
 `ClauseBuffer` is where the product's feel lives: it decides when speech is
 complete enough to translate. Cut too early and the grammar is wrong; cut too
@@ -40,10 +41,15 @@ late and captions lag.
 swift run BilbyPreview --output .build/previews   # every setup scene, both caption modes
 ```
 
-`check.sh` builds in release as well as debug on purpose: strict concurrency
-finds races under whole-module optimisation that the debug build accepts,
-and one sat in the tree unnoticed because nothing ran it between disk
-images.
+`check.sh` builds in release on purpose: strict concurrency finds races under
+whole-module optimisation that the debug build accepts, and one sat in the
+tree unnoticed because nothing ran it between disk images.
+
+`release.sh` lays the install window out with `dmgbuild`, which it installs on
+first use into `.build/dmgtools` — so that one run needs `python3` and a
+network. Later runs do not. `Scripts/dmg-settings.py` is what the window looks
+like; `Scripts/check-dmg.sh` reads the finished image back and fails if it
+does not match.
 
 ## Status
 

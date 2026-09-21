@@ -8,7 +8,3 @@
 public protocol Translating: Sendable {
     func translate(_ text: String, to language: Language) async throws -> String
 }
-
-public protocol Explaining: Sendable {
-    func explain(_ phrase: String, context: [Line]) async throws -> String
-}

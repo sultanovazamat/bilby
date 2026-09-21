@@ -4,6 +4,7 @@ import CoreAudio
 import AppKit
 import BilbyCore
 import Foundation
+import Synchronization
 
 /// An app you can listen to, with every audio process it owns.
 ///
@@ -35,11 +36,11 @@ public struct AudioApp: Sendable, Identifiable, Hashable {
 /// microphone back to you. That is exactly what captions need, and it is why
 /// Bilby never asks for microphone access.
 public final class SystemAudioTap: @unchecked Sendable {
-    private let onFailure: (@Sendable (String) -> Void)?
+    private let onFailure: (@Sendable (TapFailure) -> Void)?
 
-    /// `onFailure` receives the Core Audio status that stopped us. Without it
+    /// `onFailure` receives why the capture stopped. Without it
     /// every problem — permission, format, device — looks like silence.
-    public init(onFailure: (@Sendable (String) -> Void)? = nil) {
+    public init(onFailure: (@Sendable (TapFailure) -> Void)? = nil) {
         self.onFailure = onFailure
     }
 
@@ -120,7 +121,14 @@ public final class SystemAudioTap: @unchecked Sendable {
     public func buffers(
         of processes: @escaping @Sendable () -> [AudioObjectID]
     ) -> AsyncStream<AVAudioPCMBuffer> {
-        AsyncStream { continuation in
+        // Bounded on purpose. The default is unbounded, and the recogniser
+        // reloads its models from inside the loop that drains this — so a
+        // restart left a hundred buffers a second piling up, and captions
+        // came out permanently behind real time, which is the very symptom
+        // the restart exists to cure. Dropping the stale end of a stall
+        // loses the words spoken during it; keeping them meant every
+        // sentence after it was late, for the rest of the session.
+        AsyncStream(bufferingPolicy: .bufferingNewest(100)) { continuation in
             let capture = Capture(
                 processes: processes,
                 onFailure: onFailure,
@@ -136,7 +144,11 @@ public final class SystemAudioTap: @unchecked Sendable {
     static func aggregateDescription(tapUUID: UUID, outputUID: String) -> CFDictionary {
         [
             kAudioAggregateDeviceNameKey: "Bilby",
-            kAudioAggregateDeviceUIDKey: "net.variant.bilby.aggregate",
+            // Per capture, not per app: Core Audio refuses a second
+            // aggregate device with a UID that already exists, so a
+            // fixed one left any second Bilby — an installed copy
+            // beside a `swift run` build — failing forever.
+            kAudioAggregateDeviceUIDKey: "net.variant.bilby.aggregate.\(tapUUID.uuidString)",
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
             kAudioAggregateDeviceTapAutoStartKey: true,
@@ -203,32 +215,28 @@ public final class SystemAudioTap: @unchecked Sendable {
 }
 
 
-/// Logs the first buffer and then one line a second, so the log shows whether
-/// audio is flowing without drowning in a line per callback.
-final class FrameCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var frames = 0
-    private var lastReport = Date.distantPast
-    private let waitingSince: ContinuousClock.Instant
-    private var arrived = false
+/// Counts what the realtime callback delivers — and says nothing itself.
+///
+/// `record` used to take an NSLock and then call `Log.write`, which means
+/// `String(format:)`, a `Duration` interpolation and a `DispatchQueue.async`
+/// closure, from inside the IOProc block, ninety-four times a second. Taking
+/// a lock on Core Audio's realtime thread risks priority inversion and
+/// allocating on it risks an overload, and the aggregate device this tap
+/// builds has the user's *real output device* inside it: an overload here is
+/// audible in the meeting they are listening to. A captions app must not be
+/// able to break the audio it is captioning.
+///
+/// So the callback does one relaxed atomic add, and `Capture.report` does the
+/// talking from a task that is nowhere near the realtime thread.
+final class FrameCounter: Sendable {
+    private let frames = Atomic<Int>(0)
 
-    init(waitingSince: ContinuousClock.Instant) {
-        self.waitingSince = waitingSince
-    }
-
+    /// The only thing the realtime thread calls.
     func record(_ count: Int) {
-        lock.lock()
-        let first = !arrived
-        arrived = true
-        frames += count
-        let total = frames
-        let due = Date().timeIntervalSince(lastReport) > 1
-        if due { lastReport = Date() }
-        lock.unlock()
-        // The number that matters for how long the user stares at nothing.
-        if first { Log.write("tap: FIRST BUFFER after \(ContinuousClock.now - waitingSince)") }
-        if due { Log.write("tap: \(total) frames delivered") }
+        frames.wrappingAdd(count, ordering: .relaxed)
     }
+
+    var delivered: Int { frames.load(ordering: .relaxed) }
 }
 
 /// Owns the Core Audio objects behind one capture, and rebuilds them when the
@@ -247,7 +255,8 @@ private final class Capture: @unchecked Sendable {
     private let queue = DispatchQueue(label: "net.variant.bilby.tap")
 
     private let processes: @Sendable () -> [AudioObjectID]
-    private let onFailure: (@Sendable (String) -> Void)?
+    private let onFailure: (@Sendable (TapFailure) -> Void)?
+    private var reporting: Task<Void, Never>?
     private let yield: @Sendable (AVAudioPCMBuffer) -> Void
     private let giveUp: @Sendable () -> Void
 
@@ -261,7 +270,7 @@ private final class Capture: @unchecked Sendable {
 
     init(
         processes: @escaping @Sendable () -> [AudioObjectID],
-        onFailure: (@Sendable (String) -> Void)?,
+        onFailure: (@Sendable (TapFailure) -> Void)?,
         yield: @escaping @Sendable (AVAudioPCMBuffer) -> Void,
         giveUp: @escaping @Sendable () -> Void
     ) {
@@ -297,7 +306,7 @@ private final class Capture: @unchecked Sendable {
         let begun = ContinuousClock.now
         func since() -> String { "\(ContinuousClock.now - begun)" }
         let current = processes()
-        guard !current.isEmpty else { return fail("the app has no audio processes") }
+        guard !current.isEmpty else { return fail(.appGone) }
 
         let description = CATapDescription(stereoMixdownOfProcesses: current)
         description.uuid = UUID()
@@ -305,20 +314,28 @@ private final class Capture: @unchecked Sendable {
         description.isPrivate = true
 
         let tapStatus = AudioHardwareCreateProcessTap(description, &tap)
-        guard tapStatus == noErr else { return fail("create tap \(SystemAudioTap.describe(tapStatus))") }
+        // A tap macOS would not create is, in practice, a tap macOS refused.
+        guard tapStatus == noErr else {
+            Log.write("tap: create tap \(SystemAudioTap.describe(tapStatus))")
+            return fail(.permission)
+        }
         Log.write("tap: process tap created after \(since())")
-        guard let format = SystemAudioTap.tapFormat(tap) else { return fail("tap reported no audio format") }
-        guard let outputUID = SystemAudioTap.currentOutputUID else { return fail("no default output device") }
+        guard let format = SystemAudioTap.tapFormat(tap) else {
+            return fail(.plumbing("tap reported no audio format"))
+        }
+        guard let outputUID = SystemAudioTap.currentOutputUID else { return fail(.noOutputDevice) }
 
         let aggregateStatus = AudioHardwareCreateAggregateDevice(
             SystemAudioTap.aggregateDescription(tapUUID: description.uuid, outputUID: outputUID),
             &aggregate)
         guard aggregateStatus == noErr else {
-            return fail("create aggregate \(SystemAudioTap.describe(aggregateStatus))")
+            return fail(.plumbing("create aggregate \(SystemAudioTap.describe(aggregateStatus))"))
         }
 
         Log.write("tap: aggregate device created after \(since())")
-        let arrived = FrameCounter(waitingSince: begun)
+        let arrived = FrameCounter()
+        reporting?.cancel()
+        reporting = report(arrived, waitingSince: begun)
         let hand = yield
         // @Sendable is load-bearing. Without it the closure inherits the
         // isolation of wherever it was created, and the Swift runtime
@@ -336,6 +353,12 @@ private final class Capture: @unchecked Sendable {
             let bytesPerFrame = max(Int(format.streamDescription.pointee.mBytesPerFrame), 1)
             let frames = Int(first.mDataByteSize) / bytesPerFrame
             arrived.record(frames)
+            // Still an allocation on the realtime thread, and deliberately
+            // so: the alternative is a ring of reused buffers, which the
+            // consumer can be handed while the callback is overwriting it —
+            // trading late captions for corrupted audio. The lock and the
+            // logging that used to be here were removed instead; those were
+            // unbounded, this is one malloc of a known size.
             guard frames > 0,
                 let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))
             else { return }
@@ -352,10 +375,12 @@ private final class Capture: @unchecked Sendable {
             hand(copy)
         }
         guard status == noErr, let proc else {
-            return fail("create io proc \(SystemAudioTap.describe(status))")
+            return fail(.plumbing("create io proc \(SystemAudioTap.describe(status))"))
         }
         let startStatus = AudioDeviceStart(aggregate, proc)
-        guard startStatus == noErr else { return fail("start device \(SystemAudioTap.describe(startStatus))") }
+        guard startStatus == noErr else {
+            return fail(.plumbing("start device \(SystemAudioTap.describe(startStatus))"))
+        }
 
         tapped = current
         output = outputUID
@@ -363,7 +388,36 @@ private final class Capture: @unchecked Sendable {
             "tap: started after \(since()) on \(current) — \(format.sampleRate) Hz, \(format.channelCount) ch")
     }
 
+    /// Reports whether audio is flowing, off the realtime thread. Polling a
+    /// counter rather than being told by the callback is what keeps
+    /// `FrameCounter.record` down to a single atomic add; the cost is that
+    /// "FIRST BUFFER after …" is accurate to a tenth of a second, on a figure
+    /// that has been measured in whole seconds.
+    private func report(
+        _ counter: FrameCounter, waitingSince: ContinuousClock.Instant
+    ) -> Task<Void, Never> {
+        Task.detached {
+            var announced = false
+            var reported = 0
+            while !Task.isCancelled {
+                let delivered = counter.delivered
+                if !announced, delivered > 0 {
+                    announced = true
+                    Log.write("tap: FIRST BUFFER after \(ContinuousClock.now - waitingSince)")
+                }
+                if announced, delivered != reported {
+                    reported = delivered
+                    Log.write("tap: \(delivered) frames delivered")
+                }
+                do { try await Task.sleep(for: announced ? .seconds(1) : .milliseconds(100)) }
+                catch { return }
+            }
+        }
+    }
+
     private func close() {
+        reporting?.cancel()
+        reporting = nil
         if let proc, aggregate != kAudioObjectUnknown {
             AudioDeviceStop(aggregate, proc)
             AudioDeviceDestroyIOProcID(aggregate, proc)
@@ -382,9 +436,9 @@ private final class Capture: @unchecked Sendable {
         open()
     }
 
-    private func fail(_ reason: String) {
-        Log.write("tap: FAILED — \(reason)")
-        onFailure?(reason)
+    private func fail(_ failure: TapFailure) {
+        Log.write("tap: FAILED — \(failure.detail)")
+        onFailure?(failure)
         giveUp()
     }
 
@@ -396,7 +450,15 @@ private final class Capture: @unchecked Sendable {
         // reported 200 ms before a half-second poll saw it.
         watch(system, kAudioHardwarePropertyProcessObjectList) { [self] in
             let current = processes()
-            guard !current.isEmpty, current != tapped else { return }
+            // An empty list means the app quit. Rebuilding on it is pointless
+            // and ignoring it is worse: the aggregate device keeps delivering
+            // frames, so every counter still reads healthy, the menu still
+            // names the app, and the bar sits on its last sentence forever.
+            if current.isEmpty {
+                guard !tapped.isEmpty else { return }
+                return fail(.appGone)
+            }
+            guard current != tapped else { return }
             rebuild("\(tapped) became \(current)")
         }
         watch(system, kAudioHardwarePropertyDefaultSystemOutputDevice) { [self] in

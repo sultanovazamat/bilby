@@ -60,7 +60,11 @@ extension AVAudioPCMBuffer {
     var peak: Float {
         guard let data = floatChannelData else { return 0 }
         var loudest: Float = 0
-        vDSP_maxmgv(data[0], 1, &loudest, vDSP_Length(Int(frameLength) * Int(format.channelCount)))
+        // stride, not channelCount: they agree for the interleaved format
+        // a tap reports today, but on a non-interleaved one data[0] holds
+        // a single channel and channelCount reads a buffer-length past
+        // the end of it, ninety-four times a second.
+        vDSP_maxmgv(data[0], 1, &loudest, vDSP_Length(Int(frameLength) * stride))
         return loudest
     }
 }

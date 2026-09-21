@@ -40,9 +40,4 @@ public struct Languages: Sendable {
         return entries.sorted { ($0.isInstalled ? 0 : 1, $0.name) < ($1.isInstalled ? 0 : 1, $1.name) }
     }
 
-    public static func isInstalled(_ code: String) async -> Bool {
-        await LanguageAvailability().status(
-            from: source, to: Locale.Language(identifier: code)
-        ) == .installed
-    }
 }

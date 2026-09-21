@@ -72,7 +72,11 @@ public final class SetupModel {
     /// How far the recogniser is, for the last page.
     public private(set) var readiness: Readiness = .idle
 
-    private let checkAudio: @Sendable () -> AudioAccess
+    /// async because answering it means enumerating every audio process
+    /// and building a real tap — tens of round trips to coreaudiod. That
+    /// ran on the main actor, once a second while this page was open, and
+    /// again at the exact moment macOS puts its permission dialog up.
+    private let checkAudio: @Sendable () async -> AudioAccess
     private let openSettings: () -> Void
     private let startListening: () -> Void
     private let loginItemHandler: (Bool) -> LoginItemOutcome
@@ -88,7 +92,7 @@ public final class SetupModel {
     private var isActive = true
 
     public init(
-        checkAudio: @escaping @Sendable () -> AudioAccess,
+        checkAudio: @escaping @Sendable () async -> AudioAccess,
         openSettings: @escaping () -> Void,
         startListening: @escaping () -> Void,
         opensAtLogin: Bool = false,
@@ -184,13 +188,15 @@ public final class SetupModel {
         caption = (source, translation)
     }
 
-    public func requestAudioAccess() {
+    public func requestAudioAccess() async {
         guard isActive, step == .permission else { return }
         // Asking and checking are the same act — building a tap is what raises
         // the prompt. If that did not settle it, send the user to the switch:
         // being asked and then left on the same screen is the worst outcome.
-        audio = checkAudio()
-        if audio == .refused { openSettings() }
+        let answer = await checkAudio()
+        guard isActive, step == .permission else { return }
+        audio = answer
+        if answer == .refused { openSettings() }
     }
 
     /// Owned by the visible page's SwiftUI task, so leaving or closing the
@@ -204,13 +210,13 @@ public final class SetupModel {
     public func watchPermission() async {
         // A closed page must not probe: probing is what raises the prompt.
         guard isActive, step == .permission else { return }
-        let arrival = checkAudio()
+        let arrival = await checkAudio()
         audio = arrival
 
         while isActive, step == .permission, !Task.isCancelled {
             do { try await Task.sleep(for: pollInterval) } catch { return }
             guard isActive, step == .permission else { return }
-            let now = checkAudio()
+            let now = await checkAudio()
             guard now != audio else { continue }
             audio = now
             if now == .granted, arrival != .granted { advance() }

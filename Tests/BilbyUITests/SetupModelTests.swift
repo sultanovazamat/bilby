@@ -25,13 +25,13 @@ struct SetupModelTests {
     }
 
     @Test("an existing audio grant is confirmed on the page, and continues on the next step")
-    func existingGrantIsConfirmed() {
+    func existingGrantIsConfirmed() async {
         var openedSettings = false
         let model = SetupModel(
             checkAudio: { .granted }, openSettings: { openedSettings = true }, startListening: {}
         )
         model.advance()
-        model.requestAudioAccess()
+        await model.requestAudioAccess()
         #expect(model.hasAudioAccess)
         #expect(model.step == .permission)
         #expect(!openedSettings)
@@ -50,13 +50,13 @@ struct SetupModelTests {
     }
 
     @Test("with nothing playing, the page explains and lets the user continue without opening Settings")
-    func nothingToProbe() {
+    func nothingToProbe() async {
         var openedSettings = false
         let model = SetupModel(
             checkAudio: { .nothingToProbe }, openSettings: { openedSettings = true }, startListening: {}
         )
         model.advance()
-        model.requestAudioAccess()
+        await model.requestAudioAccess()
         #expect(model.audio == .nothingToProbe)
         #expect(!model.hasAudioAccess)
         #expect(model.canContinue)
@@ -127,7 +127,7 @@ struct SetupModelTests {
         model.advance()
         model.stopWatching()
         await model.watchPermission()
-        model.requestAudioAccess()
+        await model.requestAudioAccess()
         #expect(checks.withLock { $0 } == 0)
         #expect(model.step == .permission)
     }
@@ -169,7 +169,7 @@ struct SetupModelTests {
     }
 
     @Test("reaching the language page asks for the recogniser once, and retry asks again")
-    func warmsUpOnce() {
+    func warmsUpOnce() async {
         var warmUps = 0
         let model = SetupModel(
             checkAudio: { .granted }, openSettings: {}, startListening: {},
@@ -180,7 +180,7 @@ struct SetupModelTests {
             }
         )
         model.advance()
-        model.requestAudioAccess()
+        await model.requestAudioAccess()
         model.advance()
         #expect(warmUps == 1)
         #expect(model.readiness == .preparing)
@@ -195,14 +195,14 @@ struct SetupModelTests {
     }
 
     @Test("a recogniser that is already warm shows as ready at once")
-    func alreadyWarm() {
+    func alreadyWarm() async {
         let model = SetupModel(
             checkAudio: { .granted }, openSettings: {}, startListening: {},
             loadLanguages: { [.init(code: "fr", name: "French", isInstalled: true)] },
             warmUp: { .ready }
         )
         model.advance()
-        model.requestAudioAccess()
+        await model.requestAudioAccess()
         model.advance()
         #expect(model.readiness == .ready)
         model.stopWatching()
@@ -437,7 +437,7 @@ struct SetupModelTests {
     /// the language step takes an explicit step forward.
     private func reachLanguages(_ model: SetupModel) async {
         model.advance()
-        model.requestAudioAccess()
+        await model.requestAudioAccess()
         model.advance()
         await model.loadLanguages()
     }

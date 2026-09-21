@@ -209,7 +209,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// session that would go on running unseen.
     func perform(_ control: WindowControl) {
         switch control {
-        case .close: stop()
+        // Keeps what the session has shown. The panel exists to be read
+        // back, and this button looks exactly like "close the window":
+        // one click used to erase a two-hour meeting with no warning and
+        // no way to get it back.
+        case .close: stop(keepingHistory: true)
         case .collapse: setMode(.bar)
         case .expand: setMode(.panel)
         }
@@ -242,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         setup?.close()
         let model = SetupModel(
-            checkAudio: { AudioPermission.check() },
+            checkAudio: { await Task.detached { AudioPermission.check() }.value },
             openSettings: { [weak self] in self?.openPermissionSettings() },
             // The last step listens for real: the app proves itself instead of
             // describing itself.
@@ -289,7 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Starts the recogniser loading if it is not already, and says where it
     /// stands, which may already be ready.
     private func warmAndReport() -> Readiness {
-        warm()
+        warm(force: true)
         return readiness
     }
 
@@ -310,7 +314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupListening?.cancel()
         setupListening = Task { [weak self] in
             while let self, !Task.isCancelled {
-                refreshSources()
+                await refreshSourcesOffMain()
                 if let source = sources.first(where: \.isPlaying) {
                     listen(to: source)
                     return
@@ -342,13 +346,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Loads the recogniser once. Listening awaits the same task, so pressing
     /// Start during a download waits for it instead of starting a second one.
+    /// `force` is for a button. The rate limit below exists to stop the menu
+    /// rebuilding itself into a retry loop; a person pressing Retry has just
+    /// fixed something and is owed an attempt, and the twenty seconds after a
+    /// failure are exactly when they press it.
     @discardableResult
-    func warm() -> Task<Readiness, Never> {
+    func warm(force: Bool = false) -> Task<Readiness, Never> {
         if let warming, !readiness.isFailure { return warming }
         // A model that failed is worth trying again, but not on every menu
         // open: each attempt changes the state, and changing the state
         // rebuilds the menu, which opens it, which tries again.
-        if let warming, ContinuousClock.now - attemptedAt < .seconds(20) { return warming }
+        if let warming, !force, ContinuousClock.now - attemptedAt < .seconds(20) {
+            return warming
+        }
         attemptedAt = ContinuousClock.now
         readiness = .preparing
         let transcriber = UnifiedTranscriber()
@@ -427,8 +437,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func refreshSources() {
-        let found = SystemAudioTap.candidates()
+    /// Enumerating audio processes is tens of round trips to coreaudiod, and
+    /// the menu path has to pay that inline: an AppKit menu is built from the
+    /// state it holds the moment it opens, so a list that arrives a heartbeat
+    /// later arrives to a menu that has already been drawn. The once-a-second
+    /// poll on the last setup page has no such excuse — see below.
+    func refreshSources() { apply(SystemAudioTap.candidates()) }
+
+    /// For the poll. Asks off the main actor and comes back to apply it, so a
+    /// page that sits open does not spend a second of main-thread time a
+    /// second on Core Audio. The icons are read here, on the main actor,
+    /// because `AudioApp.icon` is an NSImage and has no business crossing.
+    private func refreshSourcesOffMain() async {
+        apply(await Task.detached { SystemAudioTap.candidates() }.value)
+    }
+
+    private func apply(_ found: [AudioApp]) {
         for source in found where icons[source.id] == nil { icons[source.id] = source.icon }
         // Only when it changed. An observed property assigned the value it
         // already holds still tells everyone watching that it changed, and
@@ -474,10 +498,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }, keepingHistory: keepingHistory)
     }
 
-    func stop() {
+    func stop(keepingHistory: Bool = false) {
         running?.cancel()
         running = nil
-        finish()
+        finish(keepingHistory: keepingHistory)
     }
 
     /// The stream ended, by Stop or by itself. Either way the menu must not
@@ -528,20 +552,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // and when the first buffer landed.
             let transcriber = UnifiedTranscriber(onAudio: { counter.audio($0) })
             let utterances = transcriber.utterances(from: audio)
-            var firstWords: String?
-            _ = firstWords
             let session = CaptionSession(translator: AppleTranslator(), target: chosenTarget)
             for await event in session.events(from: utterances) {
                 switch event {
-                case .live(let text):
-                    if !text.isEmpty, firstWords == nil { firstWords = text }
+                case .live:
                     diagnostics.heardSomething()
                 case .line(let line):
-                    Log.write("lag \(lag(line.at)) to line — \(line.source)")
+                    Log.write("lag \(lag(line.at)) to line — \(line.source.count) chars")
                     diagnostics.committedLine()
                     pipeline = diagnostics.state
                 case .draft(let text):
-                    Log.write("draft — \(text)")
+                    Log.write("draft — \(text.count) chars")
                 case .translated(let id, let text):
                     // Feed the setup window while it is open, so its empty
                     // state fills with the user's own audio.
@@ -549,7 +570,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         setupModel?.show(line.source, text)
                     }
                     let spokenAt = model.lines.first { $0.id == id }?.at ?? .zero
-                    Log.write("lag \(lag(spokenAt)) to translation — \(text)")
+                    Log.write("lag \(lag(spokenAt)) to translation — \(text.count) chars")
+                    diagnostics.translated()
+                    pipeline = diagnostics.state
                 }
                 model.apply(event)
                 if mode == .bar { panel?.fitContent() }

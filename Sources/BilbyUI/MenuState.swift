@@ -82,7 +82,6 @@ public struct MenuState: Equatable, Sendable {
     }
 
     public var showsFixPermission: Bool {
-        if case .failed(let reason) = pipeline { return StatusText.isPermission(reason) }
-        return false
+        StatusText.isPermission(pipeline)
     }
 }

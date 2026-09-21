@@ -315,7 +315,11 @@ public struct SetupView: View {
     private func performAction() {
         switch model.step {
         case .permission:
-            if model.audio == .refused { model.requestAudioAccess() } else { model.advance() }
+            if model.audio == .refused {
+                Task { await model.requestAudioAccess() }
+            } else {
+                model.advance()
+            }
         case .language where model.languages.isEmpty:
             Task { await model.loadLanguages() }
         case .language where !model.canContinue: model.prepareLanguage()

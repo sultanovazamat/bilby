@@ -51,7 +51,7 @@ struct MenuStateTests {
         menu.apps = [zoom]
         menu.lastListened = zoom
         menu.readiness = .ready
-        menu.pipeline = .failed("create tap -4 'what'")
+        menu.pipeline = .failed(.permission)
         #expect(menu.showsFixPermission)
         #expect(menu.statusLine == "Bilby isn’t allowed to hear other apps.")
     }

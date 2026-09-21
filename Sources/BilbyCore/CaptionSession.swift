@@ -39,7 +39,7 @@ public struct CaptionSession: Sendable {
                     for event in engine.consume(utterance) { continuation.yield(event) }
 
                     while let line = engine.nextPending {
-                        pulse.translating(line.source)
+                        pulse.translating(chars: line.source.count)
                         let translation = try? await translator.translate(line.source, to: target)
                         pulse.translated()
                         for event in engine.resolve(line.id, translation: translation) {
@@ -55,7 +55,7 @@ public struct CaptionSession: Sendable {
                        ContinuousClock.now - lastDraftAt >= draftInterval {
                         lastDraft = draft
                         lastDraftAt = ContinuousClock.now
-                        pulse.translating(draft)
+                        pulse.translating(chars: draft.count)
                         let text = try? await translator.translate(draft, to: target)
                         pulse.translated()
                         if let text { continuation.yield(.draft(text)) }

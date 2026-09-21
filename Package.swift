@@ -35,7 +35,6 @@ let package = Package(
         .target(name: "BilbyUI", dependencies: ["BilbyCore"], resources: [.process("Resources")]),
         .executableTarget(name: "BilbyApp", dependencies: ["BilbyCore", "BilbySources", "BilbyUI"]),
         .executableTarget(name: "BilbyPreview", dependencies: ["BilbyCore", "BilbyUI"]),
-        .executableTarget(name: "BilbyModels", dependencies: [.product(name: "FluidAudio", package: "FluidAudio")]),
         .testTarget(name: "BilbyCoreTests", dependencies: ["BilbyCore"]),
         .testTarget(name: "BilbyUITests", dependencies: ["BilbyUI"]),
         .testTarget(name: "BilbySourcesTests", dependencies: ["BilbySources"]),

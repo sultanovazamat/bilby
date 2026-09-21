@@ -23,11 +23,18 @@ public enum StatusText {
         case .noAudio: return "No sound from \(app) yet. Is it muted?"
         case .noSpeech: return "Listening, no speech heard yet"
         case .noSentence: return "Listening…"
-        case .failed(let reason) where isPermission(reason): return "Bilby isn’t allowed to hear other apps."
-        case .failed: return "Something went wrong. Start captions again."
+        case .noTranslation:
+            return "Nothing is coming back translated. The language may need downloading again."
+        case .failed(.permission): return "Bilby isn’t allowed to hear other apps."
+        case .failed(.noOutputDevice):
+            return "This Mac has no sound output selected, so there is nothing to listen to."
+        case .failed(.appGone): return "\(app) stopped playing audio. Start captions again when it does."
+        case .failed(.plumbing): return "Something went wrong. Start captions again."
         }
     }
 
-    /// A tap that could not be created is, in practice, a tap macOS refused.
-    public static func isPermission(_ reason: String) -> Bool { reason.hasPrefix("create tap") }
+    /// Whether the one thing a person can fix themselves is what went wrong.
+    public static func isPermission(_ state: Diagnostics.State) -> Bool {
+        state == .failed(.permission)
+    }
 }

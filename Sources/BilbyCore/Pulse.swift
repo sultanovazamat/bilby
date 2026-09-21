@@ -14,7 +14,9 @@ public final class Pulse: Sendable {
         var lastUtterance = ContinuousClock.now
         var translations = 0
         var began: ContinuousClock.Instant?
-        var subject = ""
+        /// How long the outstanding line was, never the line. A stall is
+        /// found from timings; the words are the user's meeting.
+        var chars = 0
         /// Loudest sample since the last report. A frame count cannot tell
         /// a paused video from a recogniser that has given up; this can.
         var peak: Float = 0
@@ -66,10 +68,12 @@ public final class Pulse: Sendable {
         state.withLock { $0 = State() }
     }
 
-    public func translating(_ subject: String) {
+    /// Takes a length rather than the line, so that no caller can put a
+    /// person's words into the log by accident.
+    public func translating(chars: Int) {
         state.withLock {
             $0.began = ContinuousClock.now
-            $0.subject = subject
+            $0.chars = chars
         }
     }
 
@@ -87,7 +91,8 @@ public final class Pulse: Sendable {
             let now = ContinuousClock.now
             var problem: String?
             if let began = state.began, now - began >= limit {
-                problem = "translation of “\(state.subject)” has not come back in \(Self.seconds(now - began))"
+                problem = "translation of a \(state.chars)-character line"
+                    + " has not come back in \(Self.seconds(now - began))"
             } else if state.utterances > 0, now - state.lastUtterance >= limit {
                 problem =
                     "nothing recognised for \(Self.seconds(now - state.lastUtterance))"

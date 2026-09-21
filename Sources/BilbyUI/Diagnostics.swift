@@ -1,3 +1,4 @@
+import BilbyCore
 import Foundation
 
 /// Counts what actually reaches each stage of the pipeline.
@@ -12,7 +13,8 @@ public final class Diagnostics: @unchecked Sendable {
     private var firstFrameAt: ContinuousClock.Instant?
     private var utterances = 0
     private var lines = 0
-    private var failure: String?
+    private var translations = 0
+    private var failure: TapFailure?
 
     public init() {}
 
@@ -36,18 +38,28 @@ public final class Diagnostics: @unchecked Sendable {
     }
     public func heardSomething() { mutate { utterances += 1 } }
     public func committedLine() { mutate { lines += 1 } }
-    public func failed(_ reason: String) { mutate { failure = reason } }
+    public func translated() { mutate { translations += 1 } }
+    public func failed(_ failure: TapFailure) { mutate { self.failure = failure } }
 
     public func reset() {
-        mutate { frames = 0; utterances = 0; lines = 0; failure = nil; firstFrameAt = nil }
+        mutate {
+            frames = 0; utterances = 0; lines = 0; translations = 0
+            failure = nil; firstFrameAt = nil
+        }
     }
 
     /// The first stage that is empty. `StatusText` turns it into a sentence.
     public enum State: Equatable, Sendable {
-        case failed(String)
+        case failed(TapFailure)
         case noAudio
         case noSpeech(frames: Int)
         case noSentence(utterances: Int)
+        /// Sentences are arriving and none of them is coming back
+        /// translated. CaptionSession discards translation errors by
+        /// design, so this state is the only sign a user ever gets:
+        /// before it, a missing language pair showed as English
+        /// captions, forever, with the menu reporting everything fine.
+        case noTranslation(lines: Int)
         case flowing(lines: Int)
     }
 
@@ -57,6 +69,10 @@ public final class Diagnostics: @unchecked Sendable {
         if frames == 0 { return .noAudio }
         if utterances == 0 { return .noSpeech(frames: frames) }
         if lines == 0 { return .noSentence(utterances: utterances) }
+        // Three, not one: the first line is on screen while its translation
+        // is still in flight, and two leaves room for one slow pair. Three
+        // sentences with nothing back is not a slow pair.
+        if translations == 0, lines >= 3 { return .noTranslation(lines: lines) }
         return .flowing(lines: lines)
     }
 

@@ -10,14 +10,15 @@ struct PulseTests {
         #expect(pulse.report(stage: "captions", after: .zero) == nil)
     }
 
-    @Test("a translation that has not come back is named, once, and its return is too")
+    @Test("a translation that has not come back is sized, once, and its return is too")
     func outstandingTranslation() throws {
         let pulse = Pulse()
         pulse.heard()
-        pulse.translating("the runway is tighter")
+        pulse.translating(chars: 21)
         let first = try #require(pulse.report(stage: "captions", after: .zero))
         #expect(first.contains("captions: STALLED"))
-        #expect(first.contains("the runway is tighter"))
+        // Its length, not its words: the log must not carry the meeting.
+        #expect(first.contains("21-character"))
         // Said once: a line every two seconds would bury the rest of the log.
         #expect(pulse.report(stage: "captions", after: .zero) == nil)
 
@@ -32,7 +33,7 @@ struct PulseTests {
     func silentRecognition() throws {
         let pulse = Pulse()
         pulse.heard()
-        pulse.translating("something")
+        pulse.translating(chars: 9)
         pulse.translated()
         let report = try #require(pulse.report(stage: "asr", after: .zero))
         #expect(report.contains("asr: STALLED"))
@@ -108,7 +109,7 @@ struct PulseTests {
     func patientLimit() {
         let pulse = Pulse()
         pulse.heard()
-        pulse.translating("a clause")
+        pulse.translating(chars: 8)
         #expect(pulse.report(stage: "captions", after: .seconds(60)) == nil)
     }
 }
