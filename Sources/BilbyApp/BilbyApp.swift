@@ -130,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     @ObservationIgnored private var warming: Task<Readiness, Never>?
+    @ObservationIgnored private var attemptedAt = ContinuousClock.now - .seconds(60)
     /// Which start is current, so a stream that ends late cannot finish a
     /// session that replaced it.
     @ObservationIgnored private var generation = 0
@@ -347,13 +348,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @discardableResult
     func warm() -> Task<Readiness, Never> {
         if let warming, !readiness.isFailure { return warming }
+        // A model that failed is worth trying again, but not on every menu
+        // open: each attempt changes the state, and changing the state
+        // rebuilds the menu, which opens it, which tries again.
+        if let warming, ContinuousClock.now - attemptedAt < .seconds(20) { return warming }
+        attemptedAt = ContinuousClock.now
         readiness = .preparing
         let transcriber = recogniser()
         // The delegate lives as long as the app, so a strong capture is fine.
         let task = Task.detached { () -> Readiness in
             let final = await transcriber.warmUp { partial in
                 Task { @MainActor in
-                    guard !self.readiness.isSettled else { return }
+                    guard !self.readiness.isSettled, self.worthShowing(partial) else { return }
                     self.readiness = partial
                 }
             }
@@ -364,13 +370,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return task
     }
 
+    /// A download reports progress far more often than a person can read it,
+    /// and every report redraws anything watching. Whole percentages only.
+    private func worthShowing(_ next: Readiness) -> Bool {
+        guard case .downloading(let now) = next, case .downloading(let shown) = readiness else {
+            return next != readiness
+        }
+        return Int(now * 100) != Int(shown * 100)
+    }
+
     /// Opening the menu means the user is about to act, which is the moment
     /// worth spending on. Warming up at launch cost 14 seconds of CPU and
     /// 400 MB every login, before anyone had asked for anything.
     func menuOpened() {
         refreshSources()
         refreshLanguages()
-        pipeline = diagnostics.state
+        let state = diagnostics.state
+        if state != pipeline { pipeline = state }
         warm()
     }
 
@@ -406,16 +422,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Which languages Apple can translate English into, and which are
     /// already downloaded.
     func refreshLanguages() {
-        Task { languages = await Languages.available() }
+        Task {
+            let found = await Languages.available()
+            guard found != languages else { return }
+            languages = found
+        }
     }
 
     func refreshSources() {
         let found = SystemAudioTap.candidates()
+        for source in found where icons[source.id] == nil { icons[source.id] = source.icon }
+        // Only when it changed. An observed property assigned the value it
+        // already holds still tells everyone watching that it changed, and
+        // the menu is rebuilt from scratch when it hears that — which
+        // reopens it, which refreshes again. The submenu flickered and could
+        // not be clicked, because it was being thrown away as fast as it
+        // was drawn.
+        guard found != sources else { return }
         if found.map(\.id) != sources.map(\.id) {
             Log.write("app: sources — \(found.map { "\($0.name)\($0.isPlaying ? " ▶︎" : "")" })")
         }
         sources = found
-        for source in found where icons[source.id] == nil { icons[source.id] = source.icon }
     }
 
     /// Chosen from the list. The app being captioned carries the checkmark,
