@@ -209,14 +209,24 @@ final class FrameCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var frames = 0
     private var lastReport = Date.distantPast
+    private let waitingSince: ContinuousClock.Instant
+    private var arrived = false
+
+    init(waitingSince: ContinuousClock.Instant) {
+        self.waitingSince = waitingSince
+    }
 
     func record(_ count: Int) {
         lock.lock()
+        let first = !arrived
+        arrived = true
         frames += count
         let total = frames
         let due = Date().timeIntervalSince(lastReport) > 1
         if due { lastReport = Date() }
         lock.unlock()
+        // The number that matters for how long the user stares at nothing.
+        if first { Log.write("tap: FIRST BUFFER after \(ContinuousClock.now - waitingSince)") }
         if due { Log.write("tap: \(total) frames delivered") }
     }
 }
@@ -281,6 +291,11 @@ private final class Capture: @unchecked Sendable {
 
     private func open() {
         guard running else { return }
+        // Ten seconds passed between this device reporting itself started and
+        // its first buffer, measured on a live session. Which call spends
+        // them decides whether it can be moved off the path the user waits on.
+        let begun = ContinuousClock.now
+        func since() -> String { "\(ContinuousClock.now - begun)" }
         let current = processes()
         guard !current.isEmpty else { return fail("the app has no audio processes") }
 
@@ -291,6 +306,7 @@ private final class Capture: @unchecked Sendable {
 
         let tapStatus = AudioHardwareCreateProcessTap(description, &tap)
         guard tapStatus == noErr else { return fail("create tap \(SystemAudioTap.describe(tapStatus))") }
+        Log.write("tap: process tap created after \(since())")
         guard let format = SystemAudioTap.tapFormat(tap) else { return fail("tap reported no audio format") }
         guard let outputUID = SystemAudioTap.currentOutputUID else { return fail("no default output device") }
 
@@ -301,7 +317,8 @@ private final class Capture: @unchecked Sendable {
             return fail("create aggregate \(SystemAudioTap.describe(aggregateStatus))")
         }
 
-        let arrived = FrameCounter()
+        Log.write("tap: aggregate device created after \(since())")
+        let arrived = FrameCounter(waitingSince: begun)
         let hand = yield
         // @Sendable is load-bearing. Without it the closure inherits the
         // isolation of wherever it was created, and the Swift runtime
@@ -342,7 +359,8 @@ private final class Capture: @unchecked Sendable {
 
         tapped = current
         output = outputUID
-        Log.write("tap: running on \(current) — \(format.sampleRate) Hz, \(format.channelCount) ch")
+        Log.write(
+            "tap: started after \(since()) on \(current) — \(format.sampleRate) Hz, \(format.channelCount) ch")
     }
 
     private func close() {
