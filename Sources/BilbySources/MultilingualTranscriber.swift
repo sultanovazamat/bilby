@@ -142,12 +142,42 @@ actor MultilingualModels {
 
     func loaded(progress: @escaping ProgressHandler) async throws -> SharedNemotronMultilingualModels {
         if let models { return models }
-        let fresh = try await StreamingNemotronMultilingualAsrManager.downloadAndPreloadShared(
-            languageCode: "auto",
-            chunkMs: MultilingualTranscriber.chunkMsForSharing,
-            progressHandler: progress)
-        models = fresh
-        return fresh
+        let chunk = MultilingualTranscriber.chunkMsForSharing
+
+        func fetch() async throws -> URL {
+            try await StreamingNemotronMultilingualAsrManager.downloadVariant(
+                languageCode: "auto", chunkMs: chunk, progressHandler: progress)
+        }
+
+        let directory = try await fetch()
+        do {
+            let fresh = try await StreamingNemotronMultilingualAsrManager.preloadShared(from: directory)
+            models = fresh
+            return fresh
+        } catch {
+            // A download that is interrupted leaves the big weights as
+            // `.partial`, and the library calls a variant cached when its
+            // metadata file exists and nothing else. Since that file lands
+            // in the first second, one quit during the download makes the
+            // model permanently unloadable and nothing ever fetches it
+            // again. Removing the marker sends it back down the download
+            // path, where the half-written file is resumed rather than
+            // thrown away.
+            Log.write("asr: multilingual model is incomplete, fetching the rest — \(error)")
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent("metadata.json"))
+            let repaired = try await fetch()
+            do {
+                let fresh = try await StreamingNemotronMultilingualAsrManager.preloadShared(from: repaired)
+                models = fresh
+                return fresh
+            } catch {
+                // Still broken: throw the variant away so the next attempt
+                // starts from nothing rather than from this.
+                Log.write("asr: multilingual model could not be repaired, discarding it — \(error)")
+                try? FileManager.default.removeItem(at: repaired)
+                throw error
+            }
+        }
     }
 }
 
