@@ -17,5 +17,9 @@ echo "── release build"
 swift build -c release --product Bilby >/dev/null
 echo "✓ release builds"
 echo "── app, and it runs without this checkout"
-./Scripts/make-app.sh >/dev/null
+# release, not the default debug: this gate exists to prove the shipped app
+# finds its resources, and it was proving it of a binary nobody ships. It is
+# also the faster of the two now — the release build above is already cached,
+# where debug would be a second full build.
+BILBY_CONFIG=release ./Scripts/make-app.sh >/dev/null
 ./Scripts/check-app-portable.sh
