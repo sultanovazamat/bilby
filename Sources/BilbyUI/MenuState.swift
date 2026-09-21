@@ -34,7 +34,6 @@ public struct MenuState: Equatable, Sendable {
     public var languages: [Language] = []
     public var target: String?
     public var readiness: Readiness = .idle
-    public var engine: Engine = .english
     public var pipeline: Diagnostics.State = .noAudio
 
     public init() {}
@@ -59,8 +58,6 @@ public struct MenuState: Equatable, Sendable {
         }
         return "\(listening.name) → \(language)"
     }
-
-    public var engineTitle: String { "Recognise: \(engine.name)" }
 
     public var installedLanguages: [Language] { languages.filter(\.isInstalled) }
     /// Names the direction, not the noun: the submenu under it is a list of

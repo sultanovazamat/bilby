@@ -80,18 +80,6 @@ struct BilbyApp: App {
                 Label(menu.languageTitle, systemImage: "character.bubble")
             }
 
-            Menu {
-                ForEach(Engine.allCases, id: \.self) { choice in
-                    Toggle(
-                        isOn: Binding(get: { menu.engine == choice }, set: { _ in delegate.use(choice) })
-                    ) {
-                        Text("\(choice.name) — \(choice.detail)")
-                    }
-                }
-            } label: {
-                Label(menu.engineTitle, systemImage: "waveform.badge.mic")
-            }
-
             Divider()
 
             if menu.showsFixPermission {
@@ -139,11 +127,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The pipeline's last reported stage, refreshed when the menu opens
     /// and when a line lands. Diagnostics itself is not observable.
     private(set) var pipeline: Diagnostics.State = .noAudio
-    /// Which speech model listens. Two are kept so the choice can be settled
-    /// on a real meeting instead of from model cards.
-    private(set) var engine: Engine =
-        Engine(rawValue: UserDefaults.standard.string(forKey: "engine") ?? "") ?? .english
-
     /// Bar or panel. Modes, not layers: one replaces the other. Chosen with
     /// the buttons on the windows themselves, and remembered.
     private(set) var mode: CaptionMode =
@@ -175,32 +158,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state.target = target?.code
         state.readiness = readiness
         state.pipeline = pipeline
-        state.engine = engine
         return state
     }
 
     func icon(for id: String) -> NSImage? { icons[id] }
-
-    func use(_ new: Engine) {
-        guard new != engine else { return }
-        engine = new
-        UserDefaults.standard.set(new.rawValue, forKey: "engine")
-        Log.write("asr: switching to the \(new.rawValue) model")
-        // The models are different objects entirely, so the warm one is no
-        // longer the right one.
-        warming = nil
-        readiness = .idle
-        warm()
-        if isListening, let source = listening { listen(to: source, keepingHistory: true) }
-    }
-
-    /// The recogniser the choice calls for.
-    private func recogniser(onAudio: (@Sendable (Int) -> Void)? = nil) -> any AudioTranscribing {
-        switch engine {
-        case .english: UnifiedTranscriber(onAudio: onAudio)
-        case .multilingual: MultilingualTranscriber(onAudio: onAudio)
-        }
-    }
 
     func setMode(_ new: CaptionMode) {
         mode = new
@@ -354,7 +315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let warming, ContinuousClock.now - attemptedAt < .seconds(20) { return warming }
         attemptedAt = ContinuousClock.now
         readiness = .preparing
-        let transcriber = recogniser()
+        let transcriber = UnifiedTranscriber()
         // The delegate lives as long as the app, so a strong capture is fine.
         let task = Task.detached { () -> Readiness in
             let final = await transcriber.warmUp { partial in
@@ -528,7 +489,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // Counting frames is how the bar knows audio is arriving at all,
             // and when the first buffer landed.
-            let transcriber = recogniser(onAudio: { counter.audio($0) })
+            let transcriber = UnifiedTranscriber(onAudio: { counter.audio($0) })
             let utterances = transcriber.utterances(from: audio)
             var firstWords: String?
             _ = firstWords

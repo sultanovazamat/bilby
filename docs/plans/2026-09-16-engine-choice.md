@@ -97,3 +97,29 @@ third engine so the three can be compared on the same call.
 
 If a second proves too slow, the two-tier shape already in the code takes EOU
 for the live line and Unified for the settled one.
+
+---
+
+# Revision, 2026-09-21: multilingual tried, measured, rejected
+
+Nemotron 3.5 streaming multilingual 0.6B was built into the app as a second
+engine, switchable from the menu, and run against Parakeet Unified on the
+same material. Both promises from its model card held: it punctuates
+natively, and it covers forty language locales, detecting which is being
+spoken rather than being told. It lost on the two things this product is
+actually made of. It was slower, and it was less accurate.
+
+Slower is structural, not incidental. It publishes no word timings while
+streaming, so the pause rule has nothing to measure and its own punctuation
+is the only boundary it offers. And that punctuation is documented to thin
+out over a long session below a 1120 ms chunk, against 320 ms for Parakeet
+Unified. About a second of the gap is the chunk tier, and the chunk tier is
+not a dial we can turn down without losing the punctuation that justified
+the model in the first place.
+
+So: English only, and the MVP is built on that. Worth revisiting when the
+model exposes streaming timings, or ships a smaller chunk that keeps its
+punctuation — not before, and not from reading another model card. The
+earlier claim in this document that multilingual models cannot punctuate
+was wrong, and so was the first reading of this one. Both were settled by
+running them.
