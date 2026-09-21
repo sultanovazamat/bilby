@@ -19,6 +19,16 @@ final class RunningTranscript: @unchecked Sendable {
     private var latest = ""
     private var changedAt = ContinuousClock.now
 
+    /// Hands over whatever has not been passed on and closes it, because the
+    /// speaker has stopped. Calling it again hands over nothing: a pause that
+    /// lasts does not make the same sentence twice.
+    func close() -> String {
+        lock.lock(); defer { lock.unlock() }
+        let remainder = rest(of: latest).trimmingCharacters(in: .whitespaces)
+        closed = latest
+        return remainder
+    }
+
     /// Forgets the session, because the recogniser behind it was replaced
     /// and its transcript starts again from nothing.
     func reset() {

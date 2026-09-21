@@ -55,6 +55,10 @@ public struct ClauseBuffer: Sendable {
 
         if utterance.isFinal {
             clauses.append(Clause(text: rest.trimmed, at: utterance.at))
+            // Nothing is left over: leaving it pending kept a finished
+            // sentence on the live line and had it translated again as a
+            // draft.
+            rest = rest[rest.endIndex...]
             shown = ""
         } else if rest.wordCount >= policy.maxWords {
             // Prefer a comma, but cut regardless: Parakeet emits no punctuation

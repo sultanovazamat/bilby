@@ -32,6 +32,19 @@ public struct UnifiedTranscriber: AudioTranscribing {
         UnifiedConfig(chunkFrames: 2, rightFrames: 2)
     }
 
+    /// How long the speaker must stop before the sentence counts as over.
+    ///
+    /// A full stop from the model is the boundary worth having, but it does
+    /// not always come: fast overlapping dialogue produced none at all, and
+    /// the fallback is a counter that cuts at twenty-five words wherever it
+    /// lands. Silence is a better fallback than arithmetic, and the
+    /// recogniser times every word it emits, so this is the gap in the audio
+    /// itself rather than a guess from when text happened to arrive.
+    private static let pause: TimeInterval = 0.8
+    /// Shorter than this is rarely a thought, and "yeah" on a line of its
+    /// own reads as noise.
+    private static let fewestWords = 3
+
     public func warmUp(progress: @escaping @Sendable (Readiness) -> Void) async -> Readiness {
         let started = ContinuousClock.now
         Log.write("asr: warming up…")
@@ -84,7 +97,13 @@ public struct UnifiedTranscriber: AudioTranscribing {
                     continuation.yield(Utterance(seen.tail, isFinal: false, at: clock.position))
                 }
 
+                // Seconds of silence fed before the real stream, which the
+                // recogniser counts in its own word times and our clock
+                // does not.
+                var primed: TimeInterval = 0
+
                 func prepared() async -> StreamingUnifiedAsrManager? {
+                    primed = 0
                     let manager = StreamingUnifiedAsrManager(config: settings)
                     do {
                         try await manager.loadModels()
@@ -109,6 +128,7 @@ public struct UnifiedTranscriber: AudioTranscribing {
                         do {
                             try await manager.appendAudio(silence)
                             try await manager.processBufferedAudio()
+                            primed = Double(silence.frameLength) / format.sampleRate
                             Log.write("asr: primed in \(ContinuousClock.now - begun)")
                         } catch {
                             Log.write("asr: priming FAILED — \(error)")
@@ -134,6 +154,10 @@ public struct UnifiedTranscriber: AudioTranscribing {
                 var toldAt = ContinuousClock.now - .seconds(60)
                 var checkedAt = ContinuousClock.now
                 var restartedAt = ContinuousClock.now - .seconds(60)
+                // Where this recogniser's clock sits against the session's.
+                var managerZero = clock.elapsed
+                var lastWordEnd: TimeInterval = 0
+                var sinceTimings = 0
 
                 for await buffer in source() {
                     onAudio?(Int(buffer.frameLength))
@@ -147,6 +171,23 @@ public struct UnifiedTranscriber: AudioTranscribing {
                         if ContinuousClock.now - toldAt >= .seconds(5) {
                             toldAt = ContinuousClock.now
                             Log.write("asr: FAILED on audio, \(failures) so far — \(error)")
+                        }
+                    }
+
+                    // Roughly every fifty milliseconds: often enough to
+                    // catch a pause while it still reads as one.
+                    sinceTimings += 1
+                    if sinceTimings >= 5 {
+                        sinceTimings = 0
+                        if let last = await manager.consumeWordTimings().last {
+                            lastWordEnd = max(lastWordEnd, last.endTime)
+                        }
+                        let heardSoFar = clock.elapsed - managerZero + primed
+                        if lastWordEnd > 0, heardSoFar - lastWordEnd >= Self.pause {
+                            let finished = spoken.close()
+                            if finished.split(whereSeparator: \.isWhitespace).count >= Self.fewestWords {
+                                continuation.yield(Utterance(finished, isFinal: true, at: clock.position))
+                            }
                         }
                     }
 
@@ -172,6 +213,8 @@ public struct UnifiedTranscriber: AudioTranscribing {
                     manager = fresh
                     spoken.reset()
                     pulse.reset()
+                    managerZero = clock.elapsed
+                    lastWordEnd = 0
                     Log.write("asr: restarted")
                 }
                 _ = try? await manager.finish()

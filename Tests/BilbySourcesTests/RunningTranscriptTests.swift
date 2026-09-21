@@ -27,6 +27,16 @@ struct RunningTranscriptTests {
         #expect(running.observe("Hi there! And then", pause: nil).tail == "Hi there! And then")
     }
 
+    @Test("closing hands over what is left and does not hand it over twice")
+    func closeOnPause() {
+        let running = RunningTranscript()
+        _ = running.observe("Hello there. And then we went", pause: nil)
+        #expect(running.close() == "And then we went")
+        #expect(running.close() == "")
+        // Speech resuming carries on from the close, not from the meeting.
+        #expect(running.observe("Hello there. And then we went to the shop", pause: nil).tail == "to the shop")
+    }
+
     @Test("a restarted recogniser starts the transcript over")
     func resetStartsOver() {
         let running = RunningTranscript()

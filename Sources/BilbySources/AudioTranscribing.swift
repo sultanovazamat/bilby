@@ -38,6 +38,12 @@ final class AudioClock: @unchecked Sendable {
         return .seconds(seconds)
     }
 
+    /// The same figure the recogniser times its words against.
+    var elapsed: TimeInterval {
+        lock.lock(); defer { lock.unlock() }
+        return seconds
+    }
+
     func advance(frames: Int, rate: Double) {
         guard rate > 0 else { return }
         lock.lock(); seconds += Double(frames) / rate; lock.unlock()

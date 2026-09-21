@@ -120,4 +120,14 @@ struct ClauseBufferTests {
         ])
         #expect(got == [["first sentence"], ["second one"]])
     }
+
+    @Test("a sentence released by a pause is not still pending afterwards")
+    func finalLeavesNothingPending() {
+        var buffer = ClauseBuffer()
+        let clauses = buffer.consume(Utterance("and then we went to the shop", isFinal: true))
+        #expect(clauses.map(\.text) == ["and then we went to the shop"])
+        // Otherwise the live line goes on showing a sentence already shown,
+        // and the draft translator keeps paying to translate it.
+        #expect(buffer.pending.isEmpty)
+    }
 }
