@@ -32,15 +32,6 @@ public struct UnifiedTranscriber: AudioTranscribing {
         UnifiedConfig(chunkFrames: 2, rightFrames: 2)
     }
 
-    /// How long the speaker must stop before the sentence counts as over.
-    ///
-    /// A full stop from the model is the boundary worth having, but it does
-    /// not always come: fast overlapping dialogue produced none at all, and
-    /// the fallback is a counter that cuts at twenty-five words wherever it
-    /// lands. Silence is a better fallback than arithmetic, and the
-    /// recogniser times every word it emits, so this is the gap in the audio
-    /// itself rather than a guess from when text happened to arrive.
-    private static let pause: TimeInterval = 0.8
     /// Shorter than this is rarely a thought, and "yeah" on a line of its
     /// own reads as noise.
     private static let fewestWords = 3
@@ -158,6 +149,10 @@ public struct UnifiedTranscriber: AudioTranscribing {
                 var managerZero = clock.elapsed
                 var lastWordEnd: TimeInterval = 0
                 var sinceTimings = 0
+                // What a pause sounds like for whoever is talking. Kept
+                // across a restart of the recogniser: the model changed, the
+                // speaker did not.
+                var scale = PauseScale()
 
                 for await buffer in source() {
                     onAudio?(Int(buffer.frameLength))
@@ -179,11 +174,12 @@ public struct UnifiedTranscriber: AudioTranscribing {
                     sinceTimings += 1
                     if sinceTimings >= 5 {
                         sinceTimings = 0
-                        if let last = await manager.consumeWordTimings().last {
-                            lastWordEnd = max(lastWordEnd, last.endTime)
+                        for timing in await manager.consumeWordTimings() {
+                            if lastWordEnd > 0 { scale.saw(gap: max(0, timing.startTime - lastWordEnd)) }
+                            lastWordEnd = max(lastWordEnd, timing.endTime)
                         }
                         let heardSoFar = clock.elapsed - managerZero + primed
-                        if lastWordEnd > 0, heardSoFar - lastWordEnd >= Self.pause {
+                        if lastWordEnd > 0, heardSoFar - lastWordEnd >= scale.boundary {
                             let finished = spoken.close()
                             if finished.split(whereSeparator: \.isWhitespace).count >= Self.fewestWords {
                                 continuation.yield(Utterance(finished, isFinal: true, at: clock.position))
