@@ -35,13 +35,15 @@ late and captions lag.
 ## Build
 
 ```
-swift test                      # 100 tests, no hardware required
-./Scripts/check-core-purity.sh  # core must not import platform frameworks
-./Scripts/make-app.sh           # ~/Applications/Bilby.app, debug build
-./Scripts/check-app-portable.sh # the app must run with this checkout unreadable
+./Scripts/check.sh              # tests, purity, release build, portable app — run this
 ./Scripts/release.sh            # Bilby.dmg: release build, checked, ad-hoc signed
 swift run BilbyPreview --output .build/previews   # every setup scene, both caption modes
 ```
+
+`check.sh` builds in release as well as debug on purpose: strict concurrency
+finds races under whole-module optimisation that the debug build accepts,
+and one sat in the tree unnoticed because nothing ran it between disk
+images.
 
 ## Status
 

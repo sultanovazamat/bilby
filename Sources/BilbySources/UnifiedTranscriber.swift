@@ -116,10 +116,14 @@ public struct UnifiedTranscriber: AudioTranscribing {
                             }
                         }
                         let begun = ContinuousClock.now
+                        // Measured before the buffer is handed over: reading
+                        // it afterwards is a read of something another
+                        // isolation domain now owns.
+                        let seconds = Double(silence.frameLength) / format.sampleRate
                         do {
                             try await manager.appendAudio(silence)
                             try await manager.processBufferedAudio()
-                            primed = Double(silence.frameLength) / format.sampleRate
+                            primed = seconds
                             Log.write("asr: primed in \(ContinuousClock.now - begun)")
                         } catch {
                             Log.write("asr: priming FAILED — \(error)")
