@@ -34,6 +34,7 @@ public struct MenuState: Equatable, Sendable {
     public var languages: [Language] = []
     public var target: String?
     public var readiness: Readiness = .idle
+    public var textSize: TextSize = .system
     public var pipeline: Diagnostics.State = .noAudio
 
     public init() {}

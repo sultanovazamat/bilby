@@ -35,7 +35,7 @@ late and captions lag.
 ## Build
 
 ```
-swift test                      # 76 tests, no hardware required
+swift test                      # 100 tests, no hardware required
 ./Scripts/check-core-purity.sh  # core must not import platform frameworks
 ./Scripts/make-app.sh           # ~/Applications/Bilby.app, debug build
 ./Scripts/check-app-portable.sh # the app must run with this checkout unreadable

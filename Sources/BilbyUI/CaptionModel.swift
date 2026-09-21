@@ -39,6 +39,8 @@ public final class CaptionModel {
     public private(set) var provisional: String?
     /// Shown while the bar has no words: what Bilby is doing instead.
     public var status: String?
+    /// How large to draw, from the system's caption setting or the menu.
+    public var type = CaptionType(scale: 1)
 
     public init() {}
 

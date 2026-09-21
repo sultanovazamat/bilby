@@ -73,6 +73,18 @@ public final class CaptionPanel: NSPanel, NSWindowDelegate {
         anchor = frame.origin
     }
 
+    /// Wider text needs a wider bar, or bigger type only means more of the
+    /// sentence cut off. Grows about its own centre rather than its corner,
+    /// because a bar is read where it sits.
+    public func setWidth(_ width: CGFloat) {
+        guard abs(width - frame.width) > 0.5 else { return }
+        let centre = frame.midX
+        anchor = NSPoint(x: centre - width / 2, y: anchor.y)
+        setFrame(
+            NSRect(x: anchor.x, y: anchor.y, width: width, height: frame.height), display: true)
+        fitContent()
+    }
+
     /// Grows upward from the anchor, so a second line pushes the first one up
     /// rather than dragging the bar down over whatever it was placed to avoid.
     public func fitContent() {

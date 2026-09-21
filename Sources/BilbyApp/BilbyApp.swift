@@ -80,6 +80,18 @@ struct BilbyApp: App {
                 Label(menu.languageTitle, systemImage: "character.bubble")
             }
 
+            Menu {
+                ForEach(TextSize.allCases, id: \.self) { size in
+                    Toggle(
+                        isOn: Binding(get: { menu.textSize == size }, set: { _ in delegate.use(size) })
+                    ) {
+                        Text(size.name)
+                    }
+                }
+            } label: {
+                Label("Text Size", systemImage: "textformat.size")
+            }
+
             Divider()
 
             if menu.showsFixPermission {
@@ -127,6 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The pipeline's last reported stage, refreshed when the menu opens
     /// and when a line lands. Diagnostics itself is not observable.
     private(set) var pipeline: Diagnostics.State = .noAudio
+    /// How large the captions are drawn.
+    private(set) var textSize: TextSize =
+        TextSize(rawValue: UserDefaults.standard.string(forKey: "textSize") ?? "") ?? .system
+
     /// Bar or panel. Modes, not layers: one replaces the other. Chosen with
     /// the buttons on the windows themselves, and remembered.
     private(set) var mode: CaptionMode =
@@ -158,10 +174,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state.target = target?.code
         state.readiness = readiness
         state.pipeline = pipeline
+        state.textSize = textSize
         return state
     }
 
     func icon(for id: String) -> NSImage? { icons[id] }
+
+    func use(_ size: TextSize) {
+        guard size != textSize else { return }
+        textSize = size
+        UserDefaults.standard.set(size.rawValue, forKey: "textSize")
+        applyTextSize()
+    }
+
+    /// Reads the system's caption size and draws at it. Called when the menu
+    /// opens as well as at launch, so changing it in Accessibility settings
+    /// takes effect without restarting Bilby.
+    private func applyTextSize() {
+        let type = textSize.type(systemScale: SystemCaptions.scale)
+        guard type != model.type else { return }
+        model.type = type
+        let room = Double(NSScreen.main?.visibleFrame.width ?? 0)
+        panel?.setWidth(type.barWidth(within: room > 0 ? room * 0.92 : CaptionType.baseWidth))
+    }
 
     func setMode(_ new: CaptionMode) {
         mode = new
@@ -294,6 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controls: (WindowControl) -> Void = { [weak self] in self?.perform($0) }
         self.panel = CaptionPanel(content: CaptionBar(model: model, perform: controls))
         self.history = HistoryPanel(content: HistoryView(model: model, perform: controls))
+        applyTextSize()
         refreshSources()
         // Asked for now rather than when the menu opens: an AppKit menu is
         // built from whatever the state holds at the moment it opens, so a
@@ -346,6 +382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func menuOpened() {
         refreshSources()
         refreshLanguages()
+        applyTextSize()
         let state = diagnostics.state
         if state != pipeline { pipeline = state }
         warm()

@@ -34,7 +34,7 @@ public struct HistoryView: View {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if model.lines.isEmpty, model.live.isEmpty, let status = model.status {
                         Label(status, systemImage: "waveform")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: model.type.historySource, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
                     ForEach(model.lines) { line in
@@ -86,11 +86,11 @@ public struct HistoryView: View {
     private func row(source: String, translation: String?, settled: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(source)
-                .font(.system(size: 13))
+                .font(.system(size: model.type.historySource))
                 .foregroundStyle(.secondary)
             if let translation {
                 Text(translation)
-                    .font(.system(size: 17, weight: .medium, design: .rounded))
+                    .font(.system(size: model.type.historyTranslation, weight: .medium, design: .rounded))
                     .foregroundStyle(settled ? .primary : .secondary)
             }
         }

@@ -16,7 +16,9 @@ public struct CaptionBar: View {
 
     /// One type size for both lines. The only thing separating them is
     /// colour — the source dimmer, the translation at full strength.
-    private static let line = Font.system(size: 23, weight: .medium, design: .rounded)
+    private var line: Font {
+        .system(size: model.type.line, weight: .medium, design: .rounded)
+    }
 
     public init(model: CaptionModel, perform: @escaping (WindowControl) -> Void) {
         self.model = model
@@ -35,7 +37,7 @@ public struct CaptionBar: View {
                     // both, and shrinking the source turned it into
                     // decoration.
                     Text(pair.source)
-                        .font(Self.line)
+                        .font(line)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .truncationMode(.head)
@@ -43,7 +45,7 @@ public struct CaptionBar: View {
                         .contentTransition(.interpolate)
                     if let translation = pair.translation {
                         Text(translation)
-                            .font(Self.line)
+                            .font(line)
                             .foregroundStyle(pair.settled ? .primary : .secondary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -51,7 +53,7 @@ public struct CaptionBar: View {
                     }
                 } else if let status = model.status {
                     Label(status, systemImage: "waveform")
-                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .font(.system(size: model.type.status, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -79,5 +81,6 @@ public struct CaptionBar: View {
         .allowsHitTesting(!hidden)
         .animation(.smooth(duration: 0.28), value: hidden)
         .animation(.smooth(duration: 0.18), value: model.pair)
+        .animation(.smooth(duration: 0.2), value: model.type)
     }
 }

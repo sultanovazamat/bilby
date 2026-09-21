@@ -109,13 +109,18 @@ struct Preview {
                 .environment(\.colorScheme, scheme)
             try save(view, to: directory.appendingPathComponent("history-\(appearance).png"))
 
-            // The bar, over something to be read against.
-            let bar = CaptionBar(model: model, perform: { _ in })
-                .frame(width: 880)
-                .padding(26)
-                .background(scheme == .dark ? Color(white: 0.11) : Color(white: 0.92))
-                .environment(\.colorScheme, scheme)
-            try save(bar, to: directory.appendingPathComponent("bar-\(appearance).png"))
+            // The bar, over something to be read against, at both ends of
+            // the size range so the type stays legible at each.
+            for size in [TextSize.small, .medium, .large] {
+                model.type = size.type(systemScale: 1)
+                let bar = CaptionBar(model: model, perform: { _ in })
+                    .frame(width: model.type.barWidth(within: 1400))
+                    .padding(26)
+                    .background(scheme == .dark ? Color(white: 0.11) : Color(white: 0.92))
+                    .environment(\.colorScheme, scheme)
+                try save(bar, to: directory.appendingPathComponent("bar-\(size.rawValue)-\(appearance).png"))
+            }
+            model.type = TextSize.medium.type(systemScale: 1)
         }
         print("Wrote previews to \(directory.path)")
     }
