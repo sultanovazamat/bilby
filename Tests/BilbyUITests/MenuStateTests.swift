@@ -45,6 +45,15 @@ struct MenuStateTests {
         #expect(menu.header == "Zoom")
     }
 
+    @Test("the menu names the recogniser in use, beside the language")
+    func recogniser() {
+        var menu = MenuState()
+        #expect(menu.engineTitle == "Recognise: English")
+        menu.engine = .multilingual
+        #expect(menu.engineTitle == "Recognise: Any language")
+        #expect(Engine.allCases.count == 2)
+    }
+
     @Test("a refused tap offers the fix after the session has ended")
     func permissionRefused() {
         var menu = MenuState()
