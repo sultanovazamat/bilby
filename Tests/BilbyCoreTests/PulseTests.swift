@@ -67,6 +67,43 @@ struct PulseTests {
         #expect(!report.contains("playing"))
     }
 
+    @Test("a recogniser that stops while the room does not is a stall worth acting on")
+    func stalledWithSound() {
+        let pulse = Pulse()
+        pulse.heard()
+        pulse.sawAudio(peak: 0.4)
+        #expect(pulse.isStalled(after: .zero))
+        // Quiet is not a stall, however long it lasts.
+        let quiet = Pulse()
+        quiet.heard()
+        quiet.sawAudio(peak: 0.0001)
+        #expect(!quiet.isStalled(after: .zero))
+        // Nor is a pipeline that has not started.
+        #expect(!Pulse().isStalled(after: .zero))
+    }
+
+    @Test("words arriving clear the stall, and loudness is judged since they last did")
+    func hearingClearsTheStall() {
+        let pulse = Pulse()
+        pulse.heard()
+        pulse.sawAudio(peak: 0.4)
+        #expect(pulse.isStalled(after: .zero))
+        pulse.heard()
+        #expect(!pulse.isStalled(after: .zero))
+        pulse.sawAudio(peak: 0.0001)
+        #expect(!pulse.isStalled(after: .zero))
+    }
+
+    @Test("a restarted stage starts over with nothing held against it")
+    func resetForgets() {
+        let pulse = Pulse()
+        pulse.heard()
+        pulse.sawAudio(peak: 0.4)
+        #expect(pulse.isStalled(after: .zero))
+        pulse.reset()
+        #expect(!pulse.isStalled(after: .zero))
+    }
+
     @Test("a long limit means a working pipeline stays quiet")
     func patientLimit() {
         let pulse = Pulse()

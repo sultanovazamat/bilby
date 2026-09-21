@@ -27,6 +27,15 @@ struct RunningTranscriptTests {
         #expect(running.observe("Hi there! And then", pause: nil).tail == "Hi there! And then")
     }
 
+    @Test("a restarted recogniser starts the transcript over")
+    func resetStartsOver() {
+        let running = RunningTranscript()
+        _ = running.observe("Hello there. And then we", pause: nil)
+        running.reset()
+        // The new recogniser begins from nothing, and so must this.
+        #expect(running.observe("Something else entirely.", pause: nil).tail == "Something else entirely.")
+    }
+
     @Test("what the core is handed stays the size of a sentence, not the meeting")
     func staysSmall() {
         let running = RunningTranscript()

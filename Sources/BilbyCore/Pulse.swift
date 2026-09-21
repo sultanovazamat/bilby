@@ -21,6 +21,10 @@ public final class Pulse: Sendable {
         /// Whether this stage sees audio at all. The caption loop does not,
         /// and a stage that cannot hear must not report silence.
         var listens = false
+        /// Loudest sample since words last arrived. Separate from `peak`,
+        /// which a report consumes: deciding to restart a recogniser must
+        /// not depend on whether anyone happened to look.
+        var peakSinceHeard: Float = 0
         /// A stall is said once, not every time it is looked at.
         var announced = false
     }
@@ -33,6 +37,7 @@ public final class Pulse: Sendable {
     public func sawAudio(peak: Float) {
         state.withLock {
             $0.peak = max($0.peak, peak)
+            $0.peakSinceHeard = max($0.peakSinceHeard, peak)
             $0.listens = true
         }
     }
@@ -42,7 +47,23 @@ public final class Pulse: Sendable {
         state.withLock {
             $0.utterances += 1
             $0.lastUtterance = ContinuousClock.now
+            $0.peakSinceHeard = 0
         }
+    }
+
+    /// Whether the recogniser has stopped producing words while the room has
+    /// not stopped making sound. Silence is not a stall, however long.
+    public func isStalled(after limit: Duration, loudness: Float = 0.003) -> Bool {
+        state.withLock { state in
+            guard state.utterances > 0, state.peakSinceHeard > loudness else { return false }
+            return ContinuousClock.now - state.lastUtterance >= limit
+        }
+    }
+
+    /// Everything this stage knew, forgotten, because the stage itself was
+    /// replaced.
+    public func reset() {
+        state.withLock { $0 = State() }
     }
 
     public func translating(_ subject: String) {

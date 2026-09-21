@@ -19,6 +19,15 @@ final class RunningTranscript: @unchecked Sendable {
     private var latest = ""
     private var changedAt = ContinuousClock.now
 
+    /// Forgets the session, because the recogniser behind it was replaced
+    /// and its transcript starts again from nothing.
+    func reset() {
+        lock.lock(); defer { lock.unlock() }
+        closed = ""
+        latest = ""
+        changedAt = ContinuousClock.now
+    }
+
     /// Reports what is new, and — when `pause` is given — the thought that a
     /// silence has just ended. Engines that emit punctuation pass `nil`:
     /// their full stops are a better boundary than any timing guess.

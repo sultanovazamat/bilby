@@ -70,56 +70,61 @@ public struct UnifiedTranscriber: AudioTranscribing {
     ) -> AsyncStream<Utterance> {
         AsyncStream { continuation in
             let task = Task {
-                let manager = StreamingUnifiedAsrManager(config: config)
                 let clock = AudioClock()
                 let spoken = RunningTranscript()
                 let pulse = Pulse()
+                let settings = config
 
-                do {
-                    try await manager.loadModels()
-                    Log.write("asr: ready")
-                } catch {
-                    Log.write("asr: FAILED to load — \(error)")
-                    continuation.finish()
-                    return
-                }
-
-                // The first inference pays for setting the graph up on the
-                // Neural Engine, and the tap does not wait: every buffer that
-                // arrives meanwhile queues, and an unbounded queue never
-                // drains, so the captions run that far behind for the rest of
-                // the session — measured at 10.8 s on a live call. Paying it
-                // here, before the tap opens, costs the same seconds once and
-                // the user is told what is happening.
-                if let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2),
-                    let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48000)
-                {
-                    silence.frameLength = silence.frameCapacity
-                    if let data = silence.floatChannelData {
-                        for channel in 0..<Int(format.channelCount) {
-                            memset(data[channel], 0, Int(silence.frameLength) * MemoryLayout<Float>.size)
-                        }
-                    }
-                    let begun = ContinuousClock.now
-                    do {
-                        try await manager.appendAudio(silence)
-                        try await manager.processBufferedAudio()
-                        Log.write("asr: primed in \(ContinuousClock.now - begun)")
-                    } catch {
-                        Log.write("asr: priming FAILED — \(error)")
-                    }
-                }
-
-                // Set after priming, so a second of silence cannot be
-                // mistaken for something somebody said.
-                await manager.setPartialTranscriptCallback { text in
-                    // No pause detection: this engine punctuates, and its full
-                    // stops beat any timing guess.
+                // No pause detection: this engine punctuates, and its full
+                // stops beat any timing guess.
+                @Sendable func partial(_ text: String) {
                     pulse.heard()
                     let seen = spoken.observe(text, pause: nil)
                     guard !seen.tail.isEmpty else { return }
                     continuation.yield(Utterance(seen.tail, isFinal: false, at: clock.position))
                 }
+
+                func prepared() async -> StreamingUnifiedAsrManager? {
+                    let manager = StreamingUnifiedAsrManager(config: settings)
+                    do {
+                        try await manager.loadModels()
+                    } catch {
+                        Log.write("asr: FAILED to load — \(error)")
+                        return nil
+                    }
+                    // The first inference sets the graph up on the Neural
+                    // Engine while the tap is already delivering, and an
+                    // unbounded queue never drains. Paying it here, before
+                    // any audio is being consumed, costs the same once.
+                    if let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2),
+                        let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48000)
+                    {
+                        silence.frameLength = silence.frameCapacity
+                        if let data = silence.floatChannelData {
+                            for channel in 0..<Int(format.channelCount) {
+                                memset(data[channel], 0, Int(silence.frameLength) * MemoryLayout<Float>.size)
+                            }
+                        }
+                        let begun = ContinuousClock.now
+                        do {
+                            try await manager.appendAudio(silence)
+                            try await manager.processBufferedAudio()
+                            Log.write("asr: primed in \(ContinuousClock.now - begun)")
+                        } catch {
+                            Log.write("asr: priming FAILED — \(error)")
+                        }
+                    }
+                    // Set after priming, so a second of silence cannot be
+                    // mistaken for something somebody said.
+                    await manager.setPartialTranscriptCallback(partial)
+                    return manager
+                }
+
+                guard var manager = await prepared() else {
+                    continuation.finish()
+                    return
+                }
+                Log.write("asr: ready")
 
                 // Swallowing these is how a recogniser that had stopped
                 // working came to look exactly like a room that had gone
@@ -128,6 +133,7 @@ public struct UnifiedTranscriber: AudioTranscribing {
                 var failures = 0
                 var toldAt = ContinuousClock.now - .seconds(60)
                 var checkedAt = ContinuousClock.now
+                var restartedAt = ContinuousClock.now - .seconds(60)
 
                 for await buffer in source() {
                     onAudio?(Int(buffer.frameLength))
@@ -143,10 +149,30 @@ public struct UnifiedTranscriber: AudioTranscribing {
                             Log.write("asr: FAILED on audio, \(failures) so far — \(error)")
                         }
                     }
-                    if ContinuousClock.now - checkedAt >= .seconds(2) {
-                        checkedAt = ContinuousClock.now
-                        if let line = pulse.report(stage: "asr") { Log.write(line) }
+
+                    guard ContinuousClock.now - checkedAt >= .seconds(2) else { continue }
+                    checkedAt = ContinuousClock.now
+                    if let line = pulse.report(stage: "asr") { Log.write(line) }
+
+                    // Words stopping while the sound did not is the one
+                    // failure the user cannot act on and cannot see the cause
+                    // of: the bar simply freezes. Rather than leave it, start
+                    // the recogniser again. The models are cached, so this
+                    // costs a moment, and the rate limit keeps a recogniser
+                    // that cannot recover from thrashing.
+                    guard pulse.isStalled(after: .seconds(8)),
+                        ContinuousClock.now - restartedAt >= .seconds(30)
+                    else { continue }
+                    restartedAt = ContinuousClock.now
+                    Log.write("asr: restarting — words stopped while the audio did not")
+                    guard let fresh = await prepared() else {
+                        Log.write("asr: restart FAILED, carrying on with the old one")
+                        continue
                     }
+                    manager = fresh
+                    spoken.reset()
+                    pulse.reset()
+                    Log.write("asr: restarted")
                 }
                 _ = try? await manager.finish()
                 continuation.finish()
