@@ -1,5 +1,8 @@
 # M1 spike — findings
 
+> The spike's code left the tree when Bilby was published. The paths below are in
+> the history: `git log --all -- Spike/` lists the commits that hold them.
+
 Date: 2026-09-16. Machine: M3 Pro, macOS 26.5.2.
 Measured, not assumed. Source: `Spike/Sources/probe/Probe.swift`.
 

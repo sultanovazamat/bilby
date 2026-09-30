@@ -50,7 +50,7 @@ if [ -n "$IDENTITY" ]; then
     echo "signing with: $IDENTITY"
     codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
 else
-    echo "no Developer ID given — ad-hoc signed (Gatekeeper will warn once)"
+    echo "no Developer ID given — ad-hoc signed: on macOS 15 and later the first open is blocked until the user allows it in System Settings → Privacy & Security"
 fi
 codesign --verify --strict "$APP"
 echo "signature verified"
