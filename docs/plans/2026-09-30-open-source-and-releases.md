@@ -34,7 +34,7 @@ Conventions for every task:
 5. **Community files:**
    - `CONTRIBUTING.md`;
    - `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1);
-   - `SECURITY.md` (private vulnerability reporting);
+   - `SECURITY.md` (security boundaries and supported versions);
    - issue forms for bugs and features, and a pull request template.
 6. **Automation:**
    - `.github/workflows/ci.yml`: `check.sh` on every push to `main` and on every pull request.
@@ -59,7 +59,7 @@ Conventions for every task:
 
 1. Create the repository private and push `main`. CI must pass there.
 2. Tag `v0.1.0-rc.1` and check the draft pre-release's disk image. Then delete the release and the tag.
-3. **Owner says go public.** Then set visibility, description and topics, and turn on private vulnerability reporting. The owner uploads the social preview; GitHub has no API for it.
+3. **Owner says go public.** Then set visibility, description and topics. The owner uploads the social preview; GitHub has no API for it.
 4. Tag `v0.1.0`. **The owner reads the draft and publishes it.**
 
 ## Acceptance criteria

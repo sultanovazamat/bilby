@@ -6,8 +6,7 @@ running the same scripts you run locally.
 
 ## Cutting one
 
-1. `main` is green in CI, including the app security gate. Keep private vulnerability
-   reporting enabled and check that the reporting link in `SECURITY.md` works.
+1. `main` is green in CI, including the app security gate.
 2. Tag it and push the tag:
 
    ```

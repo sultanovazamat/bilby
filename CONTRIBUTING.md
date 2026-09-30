@@ -72,4 +72,4 @@ right. Larger changes start as a short design in `docs/plans`.
 ## Conduct
 
 Everyone taking part agrees to the [Code of Conduct](CODE_OF_CONDUCT.md).
-Security problems go through [private reporting](SECURITY.md), not issues.
+[SECURITY.md](SECURITY.md) describes the app's security boundaries and supported versions.

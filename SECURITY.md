@@ -4,16 +4,6 @@ Bilby processes private audio and captions on the Mac. Local processing reduces
 network exposure, but does not remove risks from downloads, other local software,
 or screen sharing.
 
-## Reporting
-
-Report suspected vulnerabilities through
-[GitHub's private vulnerability reporting](https://github.com/sultanovazamat/bilby/security/advisories/new).
-This lets the maintainer investigate before public disclosure. Do not post
-vulnerability details in public issues.
-
-Include the affected Bilby and macOS versions, the impact, and steps to reproduce
-using synthetic content. Do not attach private conversations or credentials.
-
 ## Security boundaries
 
 - Audio capture uses the selected app's output and macOS's system-audio permission.
@@ -37,9 +27,6 @@ using synthetic content. Do not attach private conversations or credentials.
 - App builds enable Hardened Runtime and reject unsafe runtime exceptions.
   The application is not App Sandbox-contained. An unrestricted malicious
   process already running as your user remains outside Bilby's isolation guarantees.
-
-Report any violation of these boundaries, unexpected file access, unsafe model
-handling, or a way to run untrusted code inside Bilby.
 
 ## Builds and supported versions
 
