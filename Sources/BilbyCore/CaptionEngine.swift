@@ -19,7 +19,12 @@ public struct CaptionEngine: Sendable {
     /// more than a line of it costs time the reader does not have.
     public var draftable: String? {
         let words = buffer.pending.split(whereSeparator: \.isWhitespace)
-        guard words.count >= 3 else { return nil }
+        // Two, not three: the bar moves on to a sentence once it has a draft,
+        // and waiting for a third word held every sentence start back by a
+        // quarter of a second (measured, 1.14 s against 0.89 s). Two words
+        // are usually a subject and its verb — "Я хочу", "Люди любят" — and
+        // a draft is replaced within half a second anyway.
+        guard words.count >= 2 else { return nil }
         return words.suffix(20).joined(separator: " ")
     }
 

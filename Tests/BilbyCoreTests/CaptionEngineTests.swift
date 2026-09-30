@@ -4,6 +4,19 @@ import Testing
 @Suite("CaptionEngine")
 struct CaptionEngineTests {
 
+    /// The bar shows a new sentence once it has a draft, so this is when the
+    /// reader first sees it, and its translation.
+    @Test("a sentence can be drafted once it has two words")
+    func draftsFromTwoWords() {
+        var engine = CaptionEngine()
+        _ = engine.consume(Utterance("People"))
+        let one = engine.draftable
+        _ = engine.consume(Utterance("People love"))
+        let two = engine.draftable
+        #expect(one == nil)
+        #expect(two == "People love")
+    }
+
     @Test("volatile speech drives the live line only")
     func volatileIsLiveOnly() {
         var engine = CaptionEngine()
