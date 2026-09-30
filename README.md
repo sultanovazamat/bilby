@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sultanovazamat/bilby/releases"><b>Bilby for Mac — releases</b></a>
+  <a href="https://github.com/sultanovazamat/bilby/releases/latest"><b>Download Bilby for Mac</b></a>
 </p>
 
 <picture>
@@ -83,11 +83,10 @@ You need an **Apple silicon Mac with an M1 chip or newer**, running
 **macOS 26 Tahoe or later**. Intel Macs are unsupported. A separate minimum
 RAM and total disk-space requirement has not been validated.
 
-1. Open [Releases](https://github.com/sultanovazamat/bilby/releases), download
+1. Open the [latest release](https://github.com/sultanovazamat/bilby/releases/latest), download
    `Bilby.dmg` and its `Bilby.dmg.sha256`, and verify it with
    `shasum -a 256 -c Bilby.dmg.sha256` from your Downloads folder.
-   Open the image and drag Bilby into Applications. If no release is listed,
-   use the source build instructions below. Private repository downloads require access.
+   Open the image and drag Bilby into Applications.
 2. Open it. Bilby is not notarised yet, so macOS stops the first launch. Open
    **System Settings → Privacy & Security**, scroll to the message about Bilby,
    and click **Open Anyway**. It is offered for about an hour after the blocked

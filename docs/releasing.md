@@ -6,8 +6,8 @@ running the same scripts you run locally.
 
 ## Cutting one
 
-1. `main` is green in CI, including the app security gate. For a public repository,
-   enable private vulnerability reporting and update `SECURITY.md` before publication.
+1. `main` is green in CI, including the app security gate. Keep private vulnerability
+   reporting enabled and check that the reporting link in `SECURITY.md` works.
 2. Tag it and push the tag:
 
    ```
@@ -21,7 +21,7 @@ running the same scripts you run locally.
    and notes generated from the pull requests and commits since the last tag.
 4. Read the draft, edit the notes, state whether the build is ad-hoc signed or
    Developer ID signed and notarized, and publish it. The README links to the
-   Releases page, so it does not promise a download before the first release exists.
+   latest published release.
 
 The release is named after the whole tag, but the app's version is only its
 numbers: `v0.2.0-rc.1` installs as 0.2.0, because `CFBundleShortVersionString`

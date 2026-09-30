@@ -6,18 +6,13 @@ or screen sharing.
 
 ## Reporting
 
-This repository is currently private. Collaborators can report vulnerabilities
-in [a repository issue](https://github.com/sultanovazamat/bilby/issues/new).
-These issues are visible to everyone with repository access, not just the owner.
-Confirm that GitHub still labels the repository **Private** before posting
-sensitive details. Describe the impact and provide a reproduction using synthetic
-content; do not attach private conversations or credentials.
+Report suspected vulnerabilities through
+[GitHub's private vulnerability reporting](https://github.com/sultanovazamat/bilby/security/advisories/new).
+This lets the maintainer investigate before public disclosure. Do not post
+vulnerability details in public issues.
 
-If you received a build without repository access, contact the maintainer through
-the person or private channel that provided your copy. Do not post vulnerability
-details in public issues. Before making this repository public, the maintainer
-must enable GitHub's private vulnerability reporting and update these instructions
-to the working private-report form.
+Include the affected Bilby and macOS versions, the impact, and steps to reproduce
+using synthetic content. Do not attach private conversations or credentials.
 
 ## Security boundaries
 
