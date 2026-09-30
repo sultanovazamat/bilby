@@ -22,9 +22,11 @@ running the same scripts you run locally.
    `releases/latest/download/Bilby.dmg`, follows the newest published release
    because the image's name never changes.
 
-The app's version is the tag without its `v`; its build number is the
-workflow's run number. A local `make-app.sh` build is `0.1.0 (1)` unless
-`BILBY_VERSION` and `BILBY_BUILD` say otherwise.
+The release is named after the whole tag, but the app's version is only its
+numbers: `v0.2.0-rc.1` installs as 0.2.0, because `CFBundleShortVersionString`
+allows nothing else. Its build number is the workflow's run number, which is
+what tells two candidates of one version apart. A local `make-app.sh` build
+is `0.1.0 (1)` unless `BILBY_VERSION` and `BILBY_BUILD` say otherwise.
 
 ## Switching on signing and notarisation
 
