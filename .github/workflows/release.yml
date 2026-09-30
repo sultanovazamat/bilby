@@ -1,0 +1,90 @@
+name: Release
+
+# A tag like v0.2.0 becomes a draft release with Bilby.dmg and its checksum;
+# a tag with a suffix, like v0.2.0-rc.1, becomes a draft pre-release. Nothing
+# is published until someone reads the draft and publishes it.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      # Signing and notarisation switch on when the certificate exists as a
+      # secret; without it the image is ad-hoc signed. See docs/releasing.md.
+      SIGNING: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Version from the tag
+        run: |
+          echo "BILBY_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "BILBY_BUILD=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Tests, core purity, release build, portable app
+        run: ./Scripts/check.sh
+
+      # GitHub's documented procedure for a certificate on a hosted runner, and
+      # notarytool with an App Store Connect API key. Unexercised until the
+      # first signed release.
+      - name: Import the Developer ID certificate
+        if: env.SIGNING == 'true'
+        env:
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          echo -n "$CERTIFICATE_P12" | base64 --decode -o "$RUNNER_TEMP/certificate.p12"
+          echo -n "$NOTARY_KEY_P8" | base64 --decode -o "$RUNNER_TEMP/notary.p8"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          xcrun notarytool store-credentials bilby --key "$RUNNER_TEMP/notary.p8" \
+              --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --keychain "$KEYCHAIN"
+          echo "BILBY_NOTARY_PROFILE=bilby" >> "$GITHUB_ENV"
+
+      - name: Build and check the disk image
+        env:
+          IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: ./Scripts/release.sh "$IDENTITY"
+
+      # Written from inside .build so `shasum -c Bilby.dmg.sha256` works in a
+      # downloads folder.
+      - name: Checksum
+        working-directory: .build
+        run: shasum -a 256 Bilby.dmg | tee Bilby.dmg.sha256
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=(--draft --verify-tag --generate-notes --title "Bilby $BILBY_VERSION")
+          case "$BILBY_VERSION" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" .build/Bilby.dmg .build/Bilby.dmg.sha256 "${flags[@]}"
+
+      - name: Remove the signing keychain
+        if: always() && env.SIGNING == 'true'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary.p8"
