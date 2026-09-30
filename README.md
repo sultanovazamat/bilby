@@ -72,9 +72,10 @@ bar for those — and for a video, a podcast, or anything else your Mac plays.
   contains diagnostic counts, timings and error codes, not conversation text.
   Like other files owned by your account, it may be accessible to other
   unsandboxed software running as you.
-- Captions are visible on screen and **may appear in screen sharing or recordings**.
-  Share a specific meeting window instead of the whole display when you need to
-  keep captions out of a presentation.
+- The caption bar and the session column are ordinary windows: they **appear in
+  screenshots, screen recordings and screen sharing**. To keep captions out of a
+  presentation, share a single window instead of the whole screen, or stop
+  captions first.
 
 ## Install
 

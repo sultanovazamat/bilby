@@ -3,9 +3,9 @@ import SwiftUI
 
 /// The caption bar's window.
 ///
-/// SwiftUI can express none of this: a panel that never takes focus, floats
-/// above full-screen apps. Captions may appear in screen recordings and
-/// screen sharing; macOS provides no reliable exclusion for these windows.
+/// SwiftUI can express none of this: a panel that never takes focus and
+/// floats above full-screen apps. It shows up in screenshots, recordings and
+/// screen sharing, as any other window does.
 ///
 /// It stopped being click-through when it grew buttons: a control drawn on a
 /// window that ignores the mouse cannot be pressed. Dragging it anywhere is
@@ -32,8 +32,6 @@ public final class CaptionPanel: NSPanel, NSWindowDelegate {
         )
         level = .screenSaver
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        // Best effort for legacy capture APIs, not a privacy boundary.
-        sharingType = .none
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false

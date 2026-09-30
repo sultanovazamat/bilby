@@ -5,8 +5,9 @@ import SwiftUI
 ///
 /// Borderless, because it draws its own controls in the same strip the bar
 /// has; resizable, because how much history fits is the reader's business.
-/// Like the bar it never takes keyboard focus from the meeting, floats over
-/// full-screen calls. Its contents may appear in screen sharing.
+/// Like the bar it never takes keyboard focus from the meeting and floats
+/// over full-screen calls. Both show up in screenshots, recordings and screen
+/// sharing: a recording of a captions app should have its captions in it.
 public final class HistoryPanel: NSPanel {
     private static let autosave = "HistoryPanel"
 
@@ -19,8 +20,6 @@ public final class HistoryPanel: NSPanel {
         )
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        // Best effort for legacy capture APIs, not a privacy boundary.
-        sharingType = .none
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true

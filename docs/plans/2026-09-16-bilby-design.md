@@ -74,7 +74,10 @@ still work and only "explain" disappears.
 1. Spoken word to translated line under 2.5 s on a recorded call.
 2. A translated line is never rewritten.
 3. Panel floats over full-screen apps, passes clicks through, invisible in
-   screen sharing.
+   screen sharing. *(Reversed on 2026-10-01 by the owner: macOS hides a window
+   from screen sharing only by hiding it from screenshots and recordings too,
+   and a captions app has to be recordable. The captions now show in all
+   three.)*
 4. Microphone permission never requested.
 5. `BilbyCore` imports no platform framework (enforced by script).
 6. Without Apple Intelligence, only "explain" degrades.

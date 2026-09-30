@@ -37,8 +37,8 @@ to the working private-report form.
   targets, and records counts, timings and error identifiers rather than spoken
   text or framework error descriptions. File permissions isolate other user
   accounts, not arbitrary software running as the same user.
-- Captions can appear in screen sharing or recordings. macOS's legacy
-  `NSWindow.sharingType = .none` is not a dependable capture exclusion.
+- Captions appear in screenshots, screen recordings and screen sharing. Bilby
+  does not try to hide its windows from capture.
 - App builds enable Hardened Runtime and reject unsafe runtime exceptions.
   The application is not App Sandbox-contained. An unrestricted malicious
   process already running as your user remains outside Bilby's isolation guarantees.
