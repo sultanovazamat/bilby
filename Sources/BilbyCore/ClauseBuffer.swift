@@ -36,9 +36,15 @@ public struct ClauseBuffer: Sendable {
         // on them left `shown` stale and sliced the opening words off every
         // following sentence — "watch out" arrived as "ch out".
         var rest: Substring
+        // How much of what is on screen this result still agrees with. At
+        // least one character, and half rounded up: with `shown` a lone "."
+        // — the model's full stop, arriving after a pause had already closed
+        // its sentence — half rounded down was nothing, and every sentence
+        // after it lost its first letter.
+        let agreed = zip(utterance.text, shown).prefix(while: ==).count
         if utterance.text.hasPrefix(shown) {
             rest = utterance.text.dropFirst(shown.count)
-        } else if zip(utterance.text, shown).prefix(while: ==).count >= shown.count / 2 {
+        } else if agreed > 0, agreed * 2 >= shown.count {
             // Same sentence, reworded behind our back: one real result turned
             // "off site" into "of site". Keep what is on screen and take only
             // what is genuinely new.

@@ -18,6 +18,17 @@ struct ClauseBufferTests {
         return texts.map { buffer.consume($0).map(\.text) }
     }
 
+    @Test("a full stop that arrives after its sentence does not eat the next one's first letter")
+    func lateFullStop() {
+        // A pause ended the sentence before the model punctuated it, and the
+        // model's full stop then arrived on its own — "he beta went out".
+        var buffer = ClauseBuffer()
+        _ = buffer.consume(Utterance("the beta went out on Tuesday", isFinal: true))
+        _ = buffer.consume(Utterance("."))
+        _ = buffer.consume(Utterance("People love the new onboarding"))
+        #expect(buffer.pending == "People love the new onboarding")
+    }
+
     @Test("waits while a sentence is still being spoken")
     func holdsIncompleteSpeech() {
         let got = clauses([Utterance("so let's"), Utterance("so let's circle back")])
