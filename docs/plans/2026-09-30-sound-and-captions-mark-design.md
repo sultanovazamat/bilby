@@ -21,9 +21,9 @@ menu bar image, and scaled from there:
 
 | Part | Geometry (points, y down) |
 |---|---|
-| Sound | nine bars 1 wide, 1 apart, x 0–17; heights 3, 5, 7.5, 9, 6, 8, 5.5, 3.5, 2.5, all ending on y 10 |
+| Sound | nine bars 1 wide, 1 apart, x 0–17; heights 3, 5, 7, 9, 8, 5, 7, 4, 3, all ending on y 10 |
 | Source line | 17 × 1 at y 12–13 |
-| Translation line | 17 × 1 at y 16–17 — the same size as the source |
+| Translation line | 17 × 1 at y 15–16 — the same size as the source |
 
 Every stroke is a whole point wide and starts on a whole point, so on a 1x
 display every straight edge falls on a whole pixel. External monitors at 1x
@@ -45,6 +45,19 @@ bottom to the sound. Three thin versions were compared at menu bar size:
 Thin strokes make the mark lighter than its solid neighbours in the menu
 bar. That is the trade for the look, and it was made knowingly.
 
+**Refined by Codex.** A second pass, which Codex made and the owner chose,
+kept that design and tightened it:
+
+- Every bar height is a whole point. At 1x a fractional top is a
+  half-covered pixel, so four of the nine tops were blurred.
+- The gaps under the bars and between the lines are both 2 points, so the
+  sound and its two lines read as one symbol rather than three pieces.
+- The tile is blue with a pale mark. The cream-and-brown tile belonged to the
+  animal, and blue matches the setup window's accent.
+
+The other candidate had seven bars and shorter lines on an off-white tile.
+It was elegant at large sizes but the lightest mark in the menu bar.
+
 **Bars, not a smooth wave.** A continuous wave was drawn and compared at menu
 bar size. It reads as weather: beside the system's `water.waves`, `humidity`
 and `wind` it looks like one of them, where bars beside `waveform` and
@@ -58,7 +71,7 @@ told from 100%. The two lines are the same length and weight.
 
 **While captions run, the bottom line gives way to a dot.** The dot is 3
 points across at the bottom right. The translation line ends at 13 points to
-make room, leaving 2 points clear of it and of the line above, and nothing
+make room, 2 points short of the dot, which clears the line above by 1. Nothing
 else in the image moves. This is the one state in which the lines differ; a
 dot in a corner has to take its space from something. Two alternatives were
 rejected for the first version and still apply:
@@ -74,8 +87,11 @@ corner of the circle. A square glyph also needs more inset inside a circle
 than an animal's silhouette did. The slight rotation that made the bilby look
 as if it were sniffing would make horizontal lines look like tilting text.
 
-**The app icon keeps its tile, and the mark keeps its lift.** The bilby sat
-2% of the tile high because its mass was in its body. This mark's ink is low
+**On the app icon, the mark keeps its lift and is centred on its ink.** The
+tile is a blue gradient with a faint inset rim. The mark is 60% of the tile
+and shifted half a grid point to the right: its ink is 17 of the grid's 18
+points wide, and there is no pixel grid to keep here. The bilby sat 2% of the
+tile high because its mass was in its body. This mark's ink is low
 as well: its centre of mass sits at about 9.9 on the 18-point grid, against a
 box centre of 9, because the bars stand on a baseline just above the lines.
 Centred on its box, it sags. `Resources/Bilby.icns` is regenerated from
