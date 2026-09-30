@@ -9,6 +9,8 @@ import SwiftUI
 ///
 /// Laid out on the menu bar's own 18-point grid, in strokes one point thin:
 /// nine bars one point apart, standing on a single baseline, over two lines.
+/// Integer bar heights keep their caps equally sharp; two-point clear gaps
+/// tie the sound and both caption lines into one compact silhouette.
 /// At 1x every straight edge falls on a whole pixel. That makes the mark 17
 /// points wide, and it stays half a point left of centre on purpose — centred,
 /// every bar would straddle two pixels and blur to grey.
@@ -29,7 +31,8 @@ public struct BilbyMark: Shape {
         let unit = side / 18
         let origin = CGPoint(x: rect.midX - side / 2, y: rect.midY - side / 2)
         func box(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) -> CGRect {
-            CGRect(x: origin.x + x * unit, y: origin.y + y * unit, width: width * unit, height: height * unit)
+            CGRect(
+                x: origin.x + x * unit, y: origin.y + y * unit, width: width * unit, height: height * unit)
         }
 
         var path = Path()
@@ -41,14 +44,14 @@ public struct BilbyMark: Shape {
                 style: .circular)
         }
         // Sound, rising and falling like speech above a straight baseline.
-        for (index, height) in [3, 5, 7.5, 9, 6, 8, 5.5, 3.5, 2.5].enumerated() {
-            capsule(CGFloat(index) * 2, 10 - height, 1, height)
+        for (index, height) in [3, 5, 7, 9, 8, 5, 7, 4, 3].enumerated() {
+            capsule(CGFloat(index) * 2, 10 - CGFloat(height), 1, CGFloat(height))
         }
         // What was said, and its translation: the same size.
         capsule(0, 12, 17, 1)
-        capsule(0, 16, listening ? 13 : 17, 1)
-        // 2 points clear of both lines, so nothing else has to move.
-        if listening { path.addEllipse(in: box(15, 15, 3, 3)) }
+        capsule(0, 15, listening ? 13 : 17, 1)
+        // A 2-point gap separates the shortened line from the listening dot.
+        if listening { path.addEllipse(in: box(15, 14, 3, 3)) }
         return path
     }
 

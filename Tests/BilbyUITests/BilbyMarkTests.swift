@@ -7,18 +7,18 @@ import Testing
 /// bar image, read back pixel by pixel.
 @Suite("Mark")
 struct BilbyMarkTests {
-    @Test("the two caption lines are the same size")
-    func linesMatch() throws {
-        let alpha = coverage(BilbyMark.menuBarImage(), scale: 1)
-        let lines = runs(lineRows(alpha))
+    @Test("the two caption lines are the same size", arguments: [1, 2])
+    func linesMatch(scale: Int) throws {
+        let alpha = coverage(BilbyMark.menuBarImage(), scale: scale)
+        let lines = runs(lineRows(alpha, scale: scale))
         try #require(lines.count == 2)
         #expect(lines[0].map { alpha[$0] } == lines[1].map { alpha[$0] })
     }
 
-    @Test("each caption line is a single point thin")
-    func linesAreThin() {
-        let alpha = coverage(BilbyMark.menuBarImage(), scale: 1)
-        #expect(runs(lineRows(alpha)).map(\.count) == [1, 1])
+    @Test("each caption line is a single point thin", arguments: [1, 2])
+    func linesAreThin(scale: Int) {
+        let alpha = coverage(BilbyMark.menuBarImage(), scale: scale)
+        #expect(runs(lineRows(alpha, scale: scale)).map(\.count) == [scale, scale])
     }
 
     @Test("the sound stands on one straight baseline")
@@ -40,13 +40,28 @@ struct BilbyMarkTests {
         // bottom-right corner: from 12 points across and 14 down.
         var moved: [String] = []
         for y in 0..<36 {
-            for x in 0..<36 where (x < 24 || y < 28) && idle[y][x] != live[y][x] { moved.append("\(x),\(y)") }
+            for x in 0..<36 where (x < 24 || y < 28) && idle[y][x] != live[y][x] {
+                moved.append("\(x),\(y)")
+            }
         }
         // A count, not the array: a failure should say how much moved and
         // where it starts, not print hundreds of coordinates.
         #expect(moved.count == 0, "first at \(moved.prefix(3).joined(separator: "; "))")
-        #expect(live[33][33] > 0.99, "the dot's centre is solid")
-        #expect(live[33][28] < 0.01, "the line stops short of the dot")
+        #expect(live[31][33] > 0.99, "the dot's centre is solid")
+        #expect(live[31][28] < 0.01, "the line stops short of the dot")
+    }
+
+    @Test("bar tops share the same pixel coverage as their baseline caps")
+    func barTopsOnPixelGrid() throws {
+        let alpha = coverage(BilbyMark.menuBarImage(), scale: 1)
+        let sound = alpha.prefix(try #require(lineRows(alpha).first))
+        for x in 0..<18 {
+            let rows = sound.indices.filter { sound[$0][x] > 0.01 }
+            guard let first = rows.first, let last = rows.last else { continue }
+            #expect(
+                abs(sound[first][x] - sound[last][x]) < 0.03,
+                "bar at x=\(x) must have matching integer-aligned end caps")
+        }
     }
 
     @Test("the bars stay sharp on a 1x display")
@@ -61,8 +76,8 @@ struct BilbyMarkTests {
 }
 
 /// A caption line covers most of its row; no row of the bars does.
-private func lineRows(_ alpha: [[CGFloat]]) -> [Int] {
-    alpha.indices.filter { row in alpha[row].filter { $0 > 0.5 }.count >= 14 }
+private func lineRows(_ alpha: [[CGFloat]], scale: Int = 1) -> [Int] {
+    alpha.indices.filter { row in alpha[row].filter { $0 > 0.5 }.count >= 14 * scale }
 }
 
 /// The image's alpha at `scale` pixels per point, top row first.
@@ -75,7 +90,9 @@ private func coverage(_ image: NSImage, scale: Int) -> [[CGFloat]] {
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
     image.draw(in: NSRect(x: 0, y: 0, width: side, height: side))
     NSGraphicsContext.restoreGraphicsState()
-    return (0..<side).map { y in (0..<side).map { x in bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0 } }
+    return (0..<side).map { y in
+        (0..<side).map { x in bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0 }
+    }
 }
 
 /// Consecutive rows grouped: [12, 16] becomes [[12], [16]].
