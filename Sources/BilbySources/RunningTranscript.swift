@@ -22,9 +22,15 @@ final class RunningTranscript: @unchecked Sendable {
     /// Hands over whatever has not been passed on and closes it, because the
     /// speaker has stopped. Calling it again hands over nothing: a pause that
     /// lasts does not make the same sentence twice.
-    func close() -> String {
+    ///
+    /// Fewer than `fewest` words are left where they are, for the sentence
+    /// they belong to. Closing them anyway and not passing them on lost
+    /// "Good morning, everyone", "so far" and "positive" from one short
+    /// meeting.
+    func close(fewest: Int) -> String? {
         lock.lock(); defer { lock.unlock() }
         let remainder = rest(of: latest).trimmingCharacters(in: .whitespaces)
+        guard remainder.split(whereSeparator: \.isWhitespace).count >= fewest else { return nil }
         closed = latest
         return remainder
     }

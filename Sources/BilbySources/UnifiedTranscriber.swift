@@ -28,12 +28,17 @@ public struct UnifiedTranscriber: AudioTranscribing {
     /// the CoreML export. NVIDIA ships four windows — 320 ms, 640 ms, 1.1 s and
     /// 2.1 s — and only the fastest is worth having: the slower ones buy a
     /// little accuracy with a delay people feel immediately.
+    private static let chunkFrames = 2
+    private static let rightFrames = 2
     private var config: UnifiedConfig {
-        UnifiedConfig(chunkFrames: 2, rightFrames: 2)
+        UnifiedConfig(chunkFrames: Self.chunkFrames, rightFrames: Self.rightFrames)
     }
+    /// How far past a word the recogniser has to hear before it reports it.
+    private static let lookahead = Double(chunkFrames + rightFrames) * 0.08
 
     /// Shorter than this is rarely a thought, and "yeah" on a line of its
-    /// own reads as noise.
+    /// own reads as noise. A stop does not end a sentence on fewer words:
+    /// they wait for the rest of it.
     private static let fewestWords = 3
 
     public func warmUp(progress: @escaping @Sendable (Readiness) -> Void) async -> Readiness {
@@ -153,10 +158,9 @@ public struct UnifiedTranscriber: AudioTranscribing {
                 var managerZero = clock.elapsed
                 var lastWordEnd: TimeInterval = 0
                 var sinceTimings = 0
-                // What a pause sounds like for whoever is talking. Kept
-                // across a restart of the recogniser: the model changed, the
-                // speaker did not.
-                var scale = PauseScale()
+                // For speech the model leaves unpunctuated: its own full stops
+                // end sentences, and this only ends one it never will.
+                var backstop = SentenceBackstop(lookahead: Self.lookahead)
 
                 for await buffer in source() {
                     onAudio?(Int(buffer.frameLength))
@@ -173,21 +177,18 @@ public struct UnifiedTranscriber: AudioTranscribing {
                         }
                     }
 
-                    // Roughly every fifty milliseconds: often enough to
-                    // catch a pause while it still reads as one.
+                    // Roughly every fifty milliseconds.
                     sinceTimings += 1
                     if sinceTimings >= 5 {
                         sinceTimings = 0
                         for timing in await manager.consumeWordTimings() {
-                            if lastWordEnd > 0 { scale.saw(gap: max(0, timing.startTime - lastWordEnd)) }
                             lastWordEnd = max(lastWordEnd, timing.endTime)
                         }
                         let heardSoFar = clock.elapsed - managerZero + primed
-                        if lastWordEnd > 0, heardSoFar - lastWordEnd >= scale.boundary {
-                            let finished = spoken.close()
-                            if finished.split(whereSeparator: \.isWhitespace).count >= Self.fewestWords {
-                                continuation.yield(Utterance(finished, isFinal: true, at: clock.position))
-                            }
+                        if backstop.ends(heard: heardSoFar, lastWordEnd: lastWordEnd),
+                            let finished = spoken.close(fewest: Self.fewestWords)
+                        {
+                            continuation.yield(Utterance(finished, isFinal: true, at: clock.position))
                         }
                     }
 
@@ -215,6 +216,8 @@ public struct UnifiedTranscriber: AudioTranscribing {
                     pulse.reset()
                     managerZero = clock.elapsed
                     lastWordEnd = 0
+                    // The new recogniser's clock starts again from nothing.
+                    backstop = SentenceBackstop(lookahead: Self.lookahead)
                     Log.write("asr: restarted")
                 }
                 _ = try? await manager.finish()
