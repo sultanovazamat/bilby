@@ -48,6 +48,13 @@ bar for those — and for a video, a podcast, or anything else your Mac plays.
 - **Says when it is on.** While captions run, a dot sits at the end of the
   icon in the menu bar.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/history-dark.png">
+    <img alt="The session column: each English sentence, dimmed, above its Russian translation, with the sentence being spoken at the bottom" src="docs/assets/history-light.png" width="380">
+  </picture>
+</p>
+
 ## Privacy
 
 - Speech recognition runs on your Mac's Neural Engine, and translation runs on
