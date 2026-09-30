@@ -18,10 +18,11 @@ struct SetupIllustration: View {
                     Circle()
                         .fill(Color.accentColor.opacity(0.08))
                         .frame(width: 120, height: 120)
+                    // 64, not 80: the mark is square, and any larger its
+                    // bottom line runs under the badge.
                     BilbyMark()
                         .fill(.primary)
-                        .frame(width: 80, height: 80)
-                        .rotationEffect(.degrees(reduceMotion ? 0 : sin(time * 1.5) * 2))
+                        .frame(width: 64, height: 64)
                         .frame(width: 120, height: 120)
                     Image(systemName: badge)
                         .font(.system(size: 17, weight: .semibold))

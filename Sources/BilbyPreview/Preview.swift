@@ -4,7 +4,7 @@ import BilbyUI
 import Foundation
 import SwiftUI
 
-/// `swift run BilbyPreview` checks the silhouette at actual menu-bar sizes.
+/// `swift run BilbyPreview` checks the mark at actual menu-bar sizes.
 /// Add `--output <directory>` for light/dark PNGs and every onboarding scene.
 @main
 struct Preview {

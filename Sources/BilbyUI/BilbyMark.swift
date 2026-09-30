@@ -1,66 +1,60 @@
 import AppKit
 import SwiftUI
 
-/// One continuous silhouette: two long, unequal ears, a sloping forehead,
-/// and the bilby's tapered snout.
+/// Sound above the two lines it becomes: what was said, and its translation.
 ///
 /// A path rather than an image asset: one definition serves a template in the
 /// menu bar and a large mark in a window, sharp at any size, tinted by the
 /// system for light and dark.
 ///
-/// Drawn as a single closed contour on purpose. Overlapping subpaths that turn
-/// opposite ways cancel each other under the non-zero fill rule, which shows up
-/// as white seams exactly where two shapes meet — a separate-ears version was
-/// abandoned for that reason.
+/// Laid out on the menu bar's own 18-point grid. Five 2-point bars 2 points
+/// apart fill it exactly, so at 1x every straight edge falls on a whole pixel.
+/// No two parts touch: overlapping subpaths that turn opposite ways cancel
+/// each other under the non-zero fill rule, which is why the bilby this
+/// replaced had to be drawn as a single contour.
 public struct BilbyMark: Shape {
-    public init() {}
+    private let listening: Bool
+
+    /// While captions run, the translation line gives way to a dot.
+    public init(listening: Bool = false) {
+        self.listening = listening
+    }
 
     public func path(in rect: CGRect) -> Path {
-        // Preserve the animal's proportions even in a non-square container.
+        // Preserve the mark's proportions even in a non-square container.
         let side = min(rect.width, rect.height)
+        let unit = side / 18
         let origin = CGPoint(x: rect.midX - side / 2, y: rect.midY - side / 2)
-        func at(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: origin.x + x * side, y: origin.y + y * side)
+        func box(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) -> CGRect {
+            CGRect(x: origin.x + x * unit, y: origin.y + y * unit, width: width * unit, height: height * unit)
         }
 
         var path = Path()
-        path.move(to: at(0.055, 0.735))
-        // Nose → forehead → the forward, splayed ear.
-        path.addCurve(to: at(0.40, 0.53), control1: at(0.17, 0.68), control2: at(0.32, 0.66))
-        path.addCurve(to: at(0.24, 0.09), control1: at(0.35, 0.40), control2: at(0.23, 0.18))
-        path.addCurve(to: at(0.29, 0.065), control1: at(0.24, 0.045), control2: at(0.265, 0.04))
-        path.addCurve(to: at(0.61, 0.48), control1: at(0.43, 0.17), control2: at(0.56, 0.33))
-        // The deep notch keeps the ears distinct at 18 points.
-        path.addQuadCurve(to: at(0.67, 0.49), control: at(0.64, 0.51))
-        path.addCurve(to: at(0.83, 0.055), control1: at(0.68, 0.31), control2: at(0.77, 0.10))
-        path.addCurve(to: at(0.885, 0.065), control1: at(0.86, 0.02), control2: at(0.89, 0.025))
-        path.addCurve(to: at(0.82, 0.565), control1: at(0.90, 0.25), control2: at(0.865, 0.43))
-        // Rounded cheek and jaw, tapering all the way back to the nose.
-        path.addCurve(to: at(0.84, 0.76), control1: at(0.87, 0.64), control2: at(0.875, 0.71))
-        path.addCurve(to: at(0.62, 0.91), control1: at(0.80, 0.855), control2: at(0.72, 0.91))
-        path.addCurve(to: at(0.32, 0.85), control1: at(0.49, 0.925), control2: at(0.40, 0.89))
-        path.addLine(to: at(0.065, 0.785))
-        path.addQuadCurve(to: at(0.055, 0.735), control: at(0.02, 0.765))
-        path.closeSubpath()
-
+        // Every part is 2 points across, so a 1-point radius makes each end a
+        // true semicircle — circular, where SwiftUI's default is continuous.
+        func capsule(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) {
+            path.addRoundedRect(
+                in: box(x, y, width, height), cornerSize: CGSize(width: unit, height: unit), style: .circular)
+        }
+        // Sound, in heights that rise and fall like speech.
+        for (index, height) in [3.5, 6.5, 8, 5, 3].enumerated() {
+            capsule(CGFloat(index) * 4, 4.5 - height / 2, 2, height)
+        }
+        // What was said, and its translation: the same size.
+        capsule(0, 10, 18, 2)
+        capsule(0, 15, listening ? 12 : 18, 2)
+        // 2 points clear of both lines, so nothing else has to move.
+        if listening { path.addEllipse(in: box(14, 14, 4, 4)) }
         return path
     }
 
     /// macOS supplies the tint for light, dark, and highlighted menu bars.
-    /// While captions run a dot sits at the corner: the only place a menu bar
-    /// app can say "on" without words.
+    /// While captions run a dot sits where the translation line ends: the
+    /// only place a menu bar app can say "on" without words.
     public static func menuBarImage(side: CGFloat = 18, listening: Bool = false) -> NSImage {
         let image = NSImage(size: CGSize(width: side, height: side), flipped: true) { rect in
             NSColor.black.setFill()
-            guard listening else {
-                NSBezierPath(cgPath: BilbyMark().path(in: rect).cgPath).fill()
-                return true
-            }
-            // Room for the dot: the mark shrinks toward the top-left corner.
-            let mark = CGRect(x: 0, y: 0, width: side * 0.78, height: side * 0.78)
-            NSBezierPath(cgPath: BilbyMark().path(in: mark).cgPath).fill()
-            let dot = CGRect(x: side * 0.68, y: side * 0.68, width: side * 0.32, height: side * 0.32)
-            NSBezierPath(ovalIn: dot).fill()
+            NSBezierPath(cgPath: BilbyMark(listening: listening).path(in: rect).cgPath).fill()
             return true
         }
         image.isTemplate = true

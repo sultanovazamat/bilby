@@ -7,7 +7,7 @@ import SwiftUI
 /// One definition, two very different jobs: the menu bar wants a bare
 /// monochrome template, while Finder and the Dock want a rounded tile that
 /// sits among the system's own icons without looking like a sticker. Drawing
-/// both from the same shape is what keeps them recognisably the same animal.
+/// both from the same shape is what keeps them recognisably the same mark.
 enum Icon {
     /// macOS rounds app icons itself only for the ones it draws; ours supplies
     /// its own tile, inset the way Apple's are so it does not look oversized
@@ -26,8 +26,9 @@ enum Icon {
                 ]
             )?.draw(in: path, angle: -90)
 
-            // The mark sits slightly high: its mass is in the body, and
-            // centring by bounding box reads as sagging.
+            // The mark sits slightly high: its mass is in the two solid lines
+            // under a ragged row of bars, and centring by bounding box reads
+            // as sagging.
             let markSide = tile.width * 0.58
             let mark = CGRect(
                 x: tile.midX - markSide / 2,
