@@ -30,11 +30,21 @@ public struct UnifiedTranscriber: AudioTranscribing {
     /// little accuracy with a delay people feel immediately.
     private static let chunkFrames = 2
     private static let rightFrames = 2
-    private var config: UnifiedConfig {
-        UnifiedConfig(chunkFrames: Self.chunkFrames, rightFrames: Self.rightFrames)
+    private static var config: UnifiedConfig {
+        UnifiedConfig(chunkFrames: chunkFrames, rightFrames: rightFrames)
     }
     /// How far past a word the recogniser has to hear before it reports it.
     private static let lookahead = Double(chunkFrames + rightFrames) * 0.08
+
+    /// Loaded once and kept until the app quits. A warm-up whose model was let
+    /// go bought nothing: the session loaded it again — 15 s from cold — and
+    /// the audio tap, which is what asks macOS for permission, waited behind
+    /// it.
+    private static let resident = ResidentModel<StreamingUnifiedAsrManager> {
+        let manager = StreamingUnifiedAsrManager(config: config)
+        try await manager.loadModels()
+        return manager
+    }
 
     /// Shorter than this is rarely a thought, and "yeah" on a line of its
     /// own reads as noise. A stop does not end a sentence on fewer words:
@@ -46,13 +56,18 @@ public struct UnifiedTranscriber: AudioTranscribing {
         Log.write("asr: warming up…")
         progress(.preparing)
         do {
-            try await StreamingUnifiedAsrManager(config: config).loadModels(
-                to: nil, configuration: nil,
-                progressHandler: { update in
-                    // Below 1 the files are still arriving. At 1 CoreML compiles
-                    // for this machine, which reports nothing until it is done.
-                    progress(update.fractionCompleted < 1 ? .downloading(update.fractionCompleted) : .preparing)
-                })
+            try await Self.resident.warm(loading: {
+                let manager = StreamingUnifiedAsrManager(config: Self.config)
+                try await manager.loadModels(
+                    to: nil, configuration: nil,
+                    progressHandler: { update in
+                        // Below 1 the files are still arriving. At 1 CoreML
+                        // compiles for this machine, which reports nothing
+                        // until it is done.
+                        progress(update.fractionCompleted < 1 ? .downloading(update.fractionCompleted) : .preparing)
+                    })
+                return manager
+            })
             Log.write("asr: warm in \(ContinuousClock.now - started)")
             progress(.ready)
             return .ready
@@ -82,7 +97,6 @@ public struct UnifiedTranscriber: AudioTranscribing {
                 let clock = AudioClock()
                 let spoken = RunningTranscript()
                 let pulse = Pulse()
-                let settings = config
 
                 // No pause detection: this engine punctuates, and its full
                 // stops beat any timing guess.
@@ -98,11 +112,15 @@ public struct UnifiedTranscriber: AudioTranscribing {
                 // does not.
                 var primed: TimeInterval = 0
 
-                func prepared() async -> StreamingUnifiedAsrManager? {
+                func prepared(fresh: Bool) async -> StreamingUnifiedAsrManager? {
                     primed = 0
-                    let manager = StreamingUnifiedAsrManager(config: settings)
+                    let manager: StreamingUnifiedAsrManager
                     do {
-                        try await manager.loadModels()
+                        // Already loaded, unless this is a restart or the app
+                        // was asked to listen before anything warmed it.
+                        manager = fresh ? try await Self.resident.replace() : try await Self.resident.borrow()
+                        // A lent model still holds the last session's words.
+                        try await manager.reset()
                     } catch {
                         Log.write("asr: FAILED to load — \(error)")
                         return nil
@@ -140,7 +158,7 @@ public struct UnifiedTranscriber: AudioTranscribing {
                     return manager
                 }
 
-                guard var manager = await prepared() else {
+                guard var manager = await prepared(fresh: false) else {
                     continuation.finish()
                     return
                 }
@@ -207,7 +225,7 @@ public struct UnifiedTranscriber: AudioTranscribing {
                     else { continue }
                     restartedAt = ContinuousClock.now
                     Log.write("asr: restarting — words stopped while the audio did not")
-                    guard let fresh = await prepared() else {
+                    guard let fresh = await prepared(fresh: true) else {
                         Log.write("asr: restart FAILED, carrying on with the old one")
                         continue
                     }
@@ -221,6 +239,8 @@ public struct UnifiedTranscriber: AudioTranscribing {
                     Log.write("asr: restarted")
                 }
                 _ = try? await manager.finish()
+                // Kept for the next session, which then starts at once.
+                await Self.resident.giveBack(manager)
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
