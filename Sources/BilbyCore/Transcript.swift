@@ -1,4 +1,4 @@
-/// The caption history. Append-only by construction.
+/// The latest 500 captions. Existing lines are never rewritten.
 ///
 /// A line is translated at most once. Rewriting a caption that the reader has
 /// already started reading is the single thing that makes live captioning feel
@@ -21,6 +21,12 @@ public struct Transcript: Sendable {
         lines.append(line)
         pending.append(line.id)
         nextID += 1
+        if lines.count > 500 {
+            let removed = lines.removeFirst()
+            // The UI has discarded this line too. Do not retain its source
+            // text or spend time translating something no longer displayed.
+            pending.removeAll { $0 <= removed.id }
+        }
         return line
     }
 
@@ -32,7 +38,8 @@ public struct Transcript: Sendable {
         guard let slot = pending.firstIndex(of: id) else { return false }
         pending.remove(at: slot)
         guard let translation,
-              let index = lines.firstIndex(where: { $0.id == id }) else { return true }
+            let index = lines.firstIndex(where: { $0.id == id })
+        else { return true }
         let old = lines[index]
         lines[index] = Line(id: old.id, source: old.source, translation: translation, at: old.at)
         return true

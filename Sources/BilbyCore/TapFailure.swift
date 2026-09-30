@@ -21,6 +21,8 @@ public enum TapFailure: Equatable, Sendable {
     case noOutputDevice
     /// The app being listened to is not playing audio any more, or has quit.
     case appGone
+    /// A downstream stage stopped consuming captions; capture stops as well.
+    case overloaded
     /// Core Audio would not describe or assemble the capture. The detail is
     /// for the log; there is nothing here a person can do.
     case plumbing(String)
@@ -31,6 +33,7 @@ public enum TapFailure: Equatable, Sendable {
         case .permission: return "tap refused — no permission"
         case .noOutputDevice: return "no default output device"
         case .appGone: return "the app stopped playing audio"
+        case .overloaded: return "caption delivery exceeded its bounded queue"
         case .plumbing(let reason): return reason
         }
     }

@@ -1,8 +1,31 @@
 import Testing
+
 @testable import BilbyCore
 
 @Suite("Transcript")
 struct TranscriptTests {
+
+    @Test("retains only the latest 500 lines and their pending translations")
+    func boundsHistoryAndPendingWork() {
+        var transcript = Transcript()
+        for index in 0..<2_000 {
+            let line = transcript.append(Clause(text: "Sentence \(index).", at: .seconds(index)))
+            #expect(line.id == index)
+        }
+        #expect(transcript.lines.count == 500)
+        #expect(transcript.lines.first?.id == 1_500)
+        #expect(transcript.lines.last?.id == 1_999)
+        let stale = transcript.resolve(0, translation: "No longer displayed")
+        #expect(!stale)
+        var translated = 0
+        while let pending = transcript.nextPending {
+            let resolved = transcript.resolve(pending.id, translation: "Translated")
+            #expect(resolved)
+            translated += 1
+        }
+        #expect(translated == 500)
+        #expect(transcript.lines.allSatisfy { $0.translation == "Translated" })
+    }
 
     @Test("hands out increasing ids and queues lines for translation")
     func appendsInOrder() {

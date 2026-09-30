@@ -10,15 +10,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sultanovazamat/bilby/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/sultanovazamat/bilby?sort=semver&label=release"></a>
   <a href="https://github.com/sultanovazamat/bilby/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/sultanovazamat/bilby/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="macOS 26 or later" src="https://img.shields.io/badge/macOS-26%2B-000000?logo=apple">
-  <img alt="Apple silicon" src="https://img.shields.io/badge/Apple%20silicon-required-000000">
+  <img alt="Apple silicon M1 or newer" src="https://img.shields.io/badge/Apple%20silicon-M1%2B-000000">
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/github/license/sultanovazamat/bilby"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/sultanovazamat/bilby/releases/latest/download/Bilby.dmg"><b>Download Bilby for Mac</b></a>
+  <a href="https://github.com/sultanovazamat/bilby/releases"><b>Bilby for Mac — releases</b></a>
 </p>
 
 <picture>
@@ -40,8 +39,8 @@ bar for those — and for a video, a podcast, or anything else your Mac plays.
   dimmer, so you can follow both. A draft translation follows the words as
   they come; when the sentence ends, it settles at full strength and does not
   change again.
-- **Keeps the whole session.** The green button turns the two-line bar into a
-  column of every sentence so far, for the moment you missed something.
+- **Keeps recent captions.** The green button turns the two-line bar into a
+  scrollable column of the latest 500 sentences, for the moment you missed something.
 - **Stays out of the way.** Two lines along the bottom of the screen, which
   never block a click when there is nothing to show. Text follows your system
   size, or Small, Medium or Large.
@@ -59,20 +58,35 @@ bar for those — and for a video, a podcast, or anything else your Mac plays.
 
 - Speech recognition runs on your Mac's Neural Engine, and translation runs on
   device through Apple's Translation framework. Audio never leaves the Mac.
-- Bilby downloads two things, once: the speech model, about 600 MB, the first
-  time it starts; and each translation language when you add it.
-- No account, no analytics. Bilby's own code makes no network requests.
+- Setup downloads the speech model (about 608 MB) over HTTPS from Hugging Face, and Apple
+  downloads each translation language you add. Speech model files use a fixed
+  revision and are checked against SHA-256 hashes shipped with Bilby before loading.
+  Missing or damaged files, or a future app version with a new model, may require
+  another download. Once prepared, recognition and translation work offline.
+  Builds with verified downloads use a separate cache, so upgrading from an older
+  Bilby build can download the speech model again.
+- No account, no analytics. Bilby does not upload audio, captions or translations.
 - It never uses the microphone. It reads the audio an app plays, which macOS
   asks you to allow under *Screen & System Audio Recording*.
-- Its log, `~/Library/Logs/Bilby/bilby.log`, is readable only by you, and never
-  contains anything that was said: lengths and counts, not words.
+- Its log, `~/Library/Logs/Bilby/bilby.log`, uses owner-only permissions and
+  contains diagnostic counts, timings and error codes, not conversation text.
+  Like other files owned by your account, it may be accessible to other
+  unsandboxed software running as you.
+- Captions are visible on screen and **may appear in screen sharing or recordings**.
+  Share a specific meeting window instead of the whole display when you need to
+  keep captions out of a presentation.
 
 ## Install
 
-You need a Mac with Apple silicon and macOS 26 Tahoe or later.
+You need an **Apple silicon Mac with an M1 chip or newer**, running
+**macOS 26 Tahoe or later**. Intel Macs are unsupported. A separate minimum
+RAM and total disk-space requirement has not been validated.
 
-1. Download [Bilby.dmg](https://github.com/sultanovazamat/bilby/releases/latest/download/Bilby.dmg)
-   and drag Bilby into Applications.
+1. Open [Releases](https://github.com/sultanovazamat/bilby/releases), download
+   `Bilby.dmg` and its `Bilby.dmg.sha256`, and verify it with
+   `shasum -a 256 -c Bilby.dmg.sha256` from your Downloads folder.
+   Open the image and drag Bilby into Applications. If no release is listed,
+   use the source build instructions below. Private repository downloads require access.
 2. Open it. Bilby is not notarised yet, so macOS stops the first launch. Open
    **System Settings → Privacy & Security**, scroll to the message about Bilby,
    and click **Open Anyway**. It is offered for about an hour after the blocked
@@ -90,8 +104,8 @@ Everything is in the menu bar icon:
   another.
 - **Text Size** — *Match System Settings*, *Small*, *Medium* or *Large*.
 
-On the bar itself, red stops captions, and green opens the column with the
-whole session. *Open Bilby when I log in* is on the last page of setup.
+On the bar itself, red stops captions, and green opens the column with recent
+captions. *Open Bilby when I log in* is on the last page of setup.
 
 Speech is recognised in English. Translation goes into any language Apple's
 Translation framework offers for English.

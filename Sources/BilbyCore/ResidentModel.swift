@@ -12,14 +12,24 @@
 /// copy, and replaces one that never does.
 public actor ResidentModel<Model: AnyObject & Sendable> {
     private let load: @Sendable () async throws -> Model
+    private let reset: @Sendable (Model) async throws -> Void
     /// How long a session waits for the last one to hand the model back.
     private let patience: Duration
     private var model: Model?
     private var loading: Task<Model, Error>?
     private var lent = false
+    /// Actor methods can resume after a timeout has started another load or
+    /// lease. Old completions must not publish into that newer state.
+    private var loadGeneration = 0
+    private var leaseGeneration = 0
 
-    public init(patience: Duration = .seconds(2), load: @escaping @Sendable () async throws -> Model) {
+    public init(
+        patience: Duration = .seconds(2),
+        reset: @escaping @Sendable (Model) async throws -> Void = { _ in },
+        load: @escaping @Sendable () async throws -> Model
+    ) {
         self.patience = patience
+        self.reset = reset
         self.load = load
     }
 
@@ -38,16 +48,25 @@ public actor ResidentModel<Model: AnyObject & Sendable> {
         while lent, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        // It never came back. Whatever holds it is not using it any more.
-        if lent { model = nil }
-        let lending = try await loaded(by: load)
-        lent = true
-        return lending
+        try Task.checkCancellation()
+        // The old session may still be loading or cleaning up. Give this
+        // session its own instance; do not join the old in-flight load.
+        if lent { forget() }
+        return try await lend()
     }
 
-    /// Back from a session, and kept for the next. A model this no longer
-    /// holds — one already replaced — changes nothing.
-    public func giveBack(_ returned: Model) {
+    /// Clears private session state before making the model available again.
+    /// A failed reset discards it. A stale return still clears that instance,
+    /// but cannot free a replacement currently used by another session.
+    public func giveBack(_ returned: Model) async {
+        do {
+            try await reset(returned)
+        } catch {
+            guard returned === model else { return }
+            forget()
+            lent = false
+            return
+        }
         guard returned === model else { return }
         lent = false
     }
@@ -55,18 +74,52 @@ public actor ResidentModel<Model: AnyObject & Sendable> {
     /// A fresh model, for a session whose model stopped working. The session
     /// holds the new one, and the old one is let go.
     public func replace() async throws -> Model {
+        try Task.checkCancellation()
+        forget()
+        return try await lend()
+    }
+
+    private func forget() {
+        loadGeneration += 1
         model = nil
-        return try await loaded(by: load)
+        loading = nil
+    }
+
+    private func lend() async throws -> Model {
+        // Reserve before awaiting: otherwise two cold borrowers both see an
+        // available slot and receive the same instance from loaded().
+        lent = true
+        leaseGeneration += 1
+        let generation = leaseGeneration
+        do {
+            return try await loaded(by: load)
+        } catch {
+            if generation == leaseGeneration { lent = false }
+            throw error
+        }
     }
 
     private func loaded(by loader: @escaping @Sendable () async throws -> Model) async throws -> Model {
         if let model { return model }
-        if let loading { return try await loading.value }
-        let task = Task { try await loader() }
-        loading = task
-        defer { loading = nil }
-        let fresh = try await task.value
-        model = fresh
-        return fresh
+        let task: Task<Model, Error>
+        if let loading {
+            task = loading
+        } else {
+            loadGeneration += 1
+            task = Task { try await loader() }
+            loading = task
+        }
+        let generation = loadGeneration
+        do {
+            let fresh = try await task.value
+            if generation == loadGeneration {
+                model = fresh
+                loading = nil
+            }
+            return fresh
+        } catch {
+            if generation == loadGeneration { loading = nil }
+            throw error
+        }
     }
 }

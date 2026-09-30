@@ -1,8 +1,8 @@
 import BilbyCore
 import Foundation
 
-/// Parakeet reports the whole session transcript on every update — its cache
-/// only ever grows — so this closes each sentence once it has been handed
+/// Parakeet reports the whole recognition window on every update, so this
+/// closes each sentence once it has been handed
 /// over, and the core sees one sentence at a time instead of an ever-growing
 /// monologue.
 ///
@@ -19,6 +19,24 @@ final class RunningTranscript: @unchecked Sendable {
     private var latest = ""
     private var changedAt = ContinuousClock.now
 
+    var isAtBoundary: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return rest(of: latest).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Drains a recognition window exactly once, including short fragments.
+    /// The result may be empty: its final utterance still tells ClauseBuffer
+    /// to forget its prefix before a fresh recognizer starts from nothing.
+    func finish(_ whole: String? = nil) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        if let whole { latest = whole }
+        let tail = rest(of: latest).trimmingCharacters(in: .whitespacesAndNewlines)
+        closed = latest
+        return tail
+    }
+
     /// Hands over whatever has not been passed on and closes it, because the
     /// speaker has stopped. Calling it again hands over nothing: a pause that
     /// lasts does not make the same sentence twice.
@@ -28,7 +46,8 @@ final class RunningTranscript: @unchecked Sendable {
     /// "Good morning, everyone", "so far" and "positive" from one short
     /// meeting.
     func close(fewest: Int) -> String? {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         let remainder = rest(of: latest).trimmingCharacters(in: .whitespaces)
         guard remainder.split(whereSeparator: \.isWhitespace).count >= fewest else { return nil }
         closed = latest
@@ -38,7 +57,8 @@ final class RunningTranscript: @unchecked Sendable {
     /// Forgets the session, because the recogniser behind it was replaced
     /// and its transcript starts again from nothing.
     func reset() {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         closed = ""
         latest = ""
         changedAt = ContinuousClock.now
@@ -48,7 +68,8 @@ final class RunningTranscript: @unchecked Sendable {
     /// silence has just ended. Engines that emit punctuation pass `nil`:
     /// their full stops are a better boundary than any timing guess.
     func observe(_ whole: String, pause: Duration?) -> (finished: String?, tail: String) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
 
         var finished: String?
         if whole != latest {
@@ -85,5 +106,14 @@ final class RunningTranscript: @unchecked Sendable {
             return whole[...]
         }
         return whole.dropFirst(closed.count)
+    }
+}
+
+/// Bound the dependency's token/text caches even during uninterrupted speech.
+/// Prefer a sentence or silence boundary; the hard deadline also covers a
+/// recognizer that never punctuates or has stopped producing words.
+enum RecognitionWindow {
+    static func shouldReset(elapsed: TimeInterval, atBoundary: Bool) -> Bool {
+        elapsed >= 180 || (elapsed >= 120 && atBoundary)
     }
 }

@@ -15,15 +15,15 @@ let package = Package(
         .executable(name: "Bilby", targets: ["BilbyApp"]),
     ],
     dependencies: [
-        // Brings streaming Parakeet EOU and speaker diarization as CoreML models
-        // on the Neural Engine. Costs us the zero-dependency claim; buys 25
-        // source languages, explicit end-of-utterance, and 160 ms cadence
-        // against Apple's measured 3.6 s bursts.
+        // Reviewed speech engine revision. Runtime model bytes are pinned
+        // separately by the manifest bundled with BilbySources.
         // `traits: []` opts out of NemoTextProcessing, a prebuilt xcframework we did
         // not build and cannot read. Text normalisation is cosmetic for captions;
         // shipping an opaque binary inside an app whose promise is "nothing leaves
         // your machine" is not a trade worth making.
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.12.4", traits: [])
+        .package(
+            url: "https://github.com/FluidInference/FluidAudio.git",
+            revision: "41540ea237350afe5117a082b5c28eda642d0612", traits: [])
     ],
     targets: [
         // Pure Swift. Must never import a platform framework —
@@ -31,7 +31,8 @@ let package = Package(
         .target(name: "BilbyCore"),
         // Apple's frameworks live here and nowhere else.
         .target(
-            name: "BilbySources", dependencies: ["BilbyCore", .product(name: "FluidAudio", package: "FluidAudio")]),
+            name: "BilbySources", dependencies: ["BilbyCore", .product(name: "FluidAudio", package: "FluidAudio")],
+            resources: [.process("Resources")]),
         .target(name: "BilbyUI", dependencies: ["BilbyCore"], resources: [.process("Resources")]),
         .executableTarget(name: "BilbyApp", dependencies: ["BilbyCore", "BilbySources", "BilbyUI"]),
         .executableTarget(name: "BilbyPreview", dependencies: ["BilbyCore", "BilbyUI"]),

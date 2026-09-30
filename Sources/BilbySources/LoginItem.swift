@@ -12,7 +12,7 @@ public enum LoginItem {
         do {
             if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
-            Log.write("login item: FAILED — \(error)")
+            Log.failure("login item", error: error)
             return .failed
         }
         return on && SMAppService.mainApp.status == .requiresApproval ? .needsApproval : .done

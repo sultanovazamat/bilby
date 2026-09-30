@@ -15,7 +15,10 @@ struct ExplainTests {
     func sentences() {
         #expect(
             UnifiedTranscriber.explain(Offline())
-                == "Speech recognition needs a one-time download. Connect to the internet and try again.")
+                == "Speech recognition needs a model download. Connect to the internet and try again.")
         #expect(UnifiedTranscriber.explain(Broken()) == "Speech recognition couldn’t be set up. Try again.")
+        #expect(
+            UnifiedTranscriber.explain(SpeechModelError.download)
+                == "Speech recognition needs a model download. Connect to the internet and try again.")
     }
 }

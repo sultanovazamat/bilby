@@ -33,6 +33,7 @@ public enum StatusText {
         case .failed(.noOutputDevice):
             return "This Mac has no sound output selected, so there is nothing to listen to."
         case .failed(.appGone): return "\(app) stopped playing audio. Start captions again when it does."
+        case .failed(.overloaded): return "Captions couldn’t keep up and stopped. Choose an app to restart."
         case .failed(.plumbing): return "Something went wrong. Start captions again."
         }
     }

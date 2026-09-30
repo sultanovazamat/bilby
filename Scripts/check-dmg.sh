@@ -25,8 +25,7 @@ DMG="${1:-$ROOT/.build/Bilby.dmg}"
 MOUNT=""
 # Nothing opens a Finder window on this volume any more, so there is no one to
 # wait for: if the detach fails at all, it is not going to start working.
-detach() { [ -n "$MOUNT" ] && hdiutil detach "$MOUNT" -force >/dev/null 2>&1; }
-trap detach EXIT
+trap 'if [ -n "$MOUNT" ]; then hdiutil detach "$MOUNT" -force >/dev/null 2>&1; fi' EXIT
 
 # -nobrowse, because nothing here addresses the volume through Finder any
 # more: it does not need to appear in anyone's sidebar to be read.
@@ -39,17 +38,30 @@ ok() { echo "  ✓ $1"; }
 bad() { echo "  ✗ $1"; BAD=1; }
 
 echo "── the two icons"
-[ -d "$MOUNT/Bilby.app" ] && ok "Bilby.app" || bad "Bilby.app is missing"
-[ -L "$MOUNT/Applications" ] && ok "Applications shortcut" \
-    || bad "Applications shortcut is missing — nothing to drag onto"
+if [ -d "$MOUNT/Bilby.app" ]; then ok "Bilby.app"; else bad "Bilby.app is missing"; fi
+if "$ROOT/Scripts/check-app-security.sh" "$MOUNT/Bilby.app"; then
+    ok "packaged app security"
+else
+    bad "packaged app failed security checks"
+fi
+if [ -L "$MOUNT/Applications" ]; then
+    ok "Applications shortcut"
+else
+    bad "Applications shortcut is missing — nothing to drag onto"
+fi
 
 echo "── the image looks like Bilby"
-[ -f "$MOUNT/.VolumeIcon.icns" ] && ok ".VolumeIcon.icns" \
-    || bad ".VolumeIcon.icns is missing — Finder draws a generic white drive"
+if [ -f "$MOUNT/.VolumeIcon.icns" ]; then
+    ok ".VolumeIcon.icns"
+else
+    bad ".VolumeIcon.icns is missing — Finder draws a generic white drive"
+fi
 # The file alone does nothing: the volume must also carry kHasCustomIcon.
-[ "$(GetFileInfo -aC "$MOUNT" 2>/dev/null)" = 1 ] \
-    && ok "custom icon flag on the volume" \
-    || bad "custom icon flag is not set — the icns is ignored"
+if [ "$(GetFileInfo -aC "$MOUNT" 2>/dev/null)" = 1 ]; then
+    ok "custom icon flag on the volume"
+else
+    bad "custom icon flag is not set — the icns is ignored"
+fi
 
 echo "── the window"
 "$DMG_PYTHON" - "$MOUNT" <<'PYTHON' || BAD=1

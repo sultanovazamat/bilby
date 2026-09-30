@@ -9,8 +9,10 @@ struct LiveFollow: Equatable {
     /// The way back is offered exactly when the list is not following.
     var showsJump: Bool { !isFollowing }
 
-    mutating func scrolled(toBottom: Bool) {
-        isFollowing = toBottom
+    mutating func scrolled(toBottom: Bool, userInitiated: Bool) {
+        // New words, translations and resizing can move the bottom out of
+        // view too. Only the reader can choose to stop following.
+        if userInitiated || toBottom { isFollowing = toBottom }
     }
 
     mutating func jumped() {

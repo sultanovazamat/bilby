@@ -1,8 +1,8 @@
 @preconcurrency import AVFoundation
-import AudioToolbox
-import CoreAudio
 import AppKit
+import AudioToolbox
 import BilbyCore
+import CoreAudio
 import Foundation
 import Synchronization
 
@@ -65,10 +65,13 @@ public final class SystemAudioTap: @unchecked Sendable {
         var byApp: [String: (name: String, pid: pid_t?, processes: [AudioObjectID], playing: [AudioObjectID])] =
             [:]
 
-        for object in objects(of: kAudioHardwarePropertyProcessObjectList,
-                              on: AudioObjectID(kAudioObjectSystemObject)) {
+        for object in objects(
+            of: kAudioHardwarePropertyProcessObjectList,
+            on: AudioObjectID(kAudioObjectSystemObject))
+        {
             guard let bundle = property(object, kAudioProcessPropertyBundleID, as: CFString.self) as String?,
-                  !bundle.isEmpty else { continue }
+                !bundle.isEmpty
+            else { continue }
             let pid = property(object, kAudioProcessPropertyPID, as: pid_t.self)
             let playing = property(object, kAudioProcessPropertyIsRunningOutput, as: UInt32.self) == 1
             let key = family(of: bundle)
@@ -82,22 +85,25 @@ public final class SystemAudioTap: @unchecked Sendable {
             // "Slack Helper" and "Systemsoundserverd" are not things anyone
             // means to listen to.
             if let pid, let app = NSRunningApplication(processIdentifier: pid),
-               app.activationPolicy == .regular {
+                app.activationPolicy == .regular
+            {
                 entry.pid = pid
                 entry.name = app.localizedName ?? key
             }
             byApp[key] = entry
         }
 
-        return byApp
+        return
+            byApp
             // A family with no Dock app behind it is a daemon, not a choice.
             .filter { $0.value.pid != nil }
             .map { key, entry in
-                AudioApp(id: key, name: entry.name, processes: entry.processes,
-                         playingProcesses: entry.playing, pid: entry.pid)
+                AudioApp(
+                    id: key, name: entry.name, processes: entry.processes,
+                    playingProcesses: entry.playing, pid: entry.pid)
             }
-        // Whatever is audible first, then the rest by name.
-        .sorted { ($0.isPlaying ? 0 : 1, $0.name) < ($1.isPlaying ? 0 : 1, $1.name) }
+            // Whatever is audible first, then the rest by name.
+            .sorted { ($0.isPlaying ? 0 : 1, $0.name) < ($1.isPlaying ? 0 : 1, $1.name) }
     }
 
     /// Collapses `com.google.Chrome.helper` and friends onto `com.google.Chrome`.
@@ -110,7 +116,6 @@ public final class SystemAudioTap: @unchecked Sendable {
         return parts.count >= 2 ? parts.joined(separator: ".") : bundle
     }
 
-
     /// Streams what an app is playing, and follows it when it moves.
     ///
     /// `processes` is asked again whenever Core Audio's process list changes,
@@ -119,24 +124,33 @@ public final class SystemAudioTap: @unchecked Sendable {
     /// *nothing*, not everything. A global tap is a different initializer and
     /// needs a permission an unbundled process cannot hold.
     public func buffers(
-        of processes: @escaping @Sendable () -> [AudioObjectID]
+        of processes: @escaping @Sendable () -> [AudioObjectID],
+        cancellation: SessionCancellation = SessionCancellation()
     ) -> AsyncStream<AVAudioPCMBuffer> {
-        // Bounded on purpose. The default is unbounded, and the recogniser
-        // reloads its models from inside the loop that drains this — so a
-        // restart left a hundred buffers a second piling up, and captions
-        // came out permanently behind real time, which is the very symptom
-        // the restart exists to cure. Dropping the stale end of a stall
-        // loses the words spoken during it; keeping them meant every
-        // sentence after it was late, for the rest of the session.
-        AsyncStream(bufferingPolicy: .bufferingNewest(100)) { continuation in
-            let capture = Capture(
-                processes: processes,
-                onFailure: onFailure,
-                yield: { continuation.yield($0) },
-                giveUp: { continuation.finish() })
-            capture.start()
-            continuation.onTermination = { _ in capture.stop() }
+        let output = Self.bufferStream(onFailure: onFailure)
+        let capture = Capture(
+            processes: processes,
+            onFailure: onFailure,
+            yield: { output.yield($0) },
+            giveUp: { output.finish() })
+        output.onTermination { termination in
+            capture.stop()
+            if case .cancelled = termination { cancellation.cancel() }
         }
+        // Queue start before installing the stop callback, so cancellation
+        // racing registration cannot queue a new start after teardown.
+        if !cancellation.isCancelled { capture.start() }
+        cancellation.onCancel {
+            capture.stop()
+            output.finish()
+        }
+        return output.stream
+    }
+
+    /// A gap in PCM would silently remove words. Stop and report overload
+    /// while preserving the queued prefix instead of replacing old buffers.
+    static func bufferStream(onFailure: (@Sendable (TapFailure) -> Void)?) -> BoundedStream<AVAudioPCMBuffer> {
+        BoundedStream(limit: 100) { onFailure?(.overloaded) }
     }
 
     // MARK: - Core Audio plumbing
@@ -174,11 +188,13 @@ public final class SystemAudioTap: @unchecked Sendable {
     /// built around it, so a change here leaves the tap pointed at a device
     /// nothing is coming out of.
     public static var currentOutputUID: String? {
-        guard let device = property(
-            AudioObjectID(kAudioObjectSystemObject),
-            kAudioHardwarePropertyDefaultSystemOutputDevice,
-            as: AudioObjectID.self
-        ) else { return nil }
+        guard
+            let device = property(
+                AudioObjectID(kAudioObjectSystemObject),
+                kAudioHardwarePropertyDefaultSystemOutputDevice,
+                as: AudioObjectID.self
+            )
+        else { return nil }
         return property(device, kAudioDevicePropertyDeviceUID, as: CFString.self) as String?
     }
 
@@ -213,7 +229,6 @@ public final class SystemAudioTap: @unchecked Sendable {
         return ids
     }
 }
-
 
 /// Counts what the realtime callback delivers — and says nothing itself.
 ///
@@ -266,6 +281,9 @@ private final class Capture: @unchecked Sendable {
     private var tapped: [AudioObjectID] = []
     private var output: String?
     private var running = false
+    // Stop can arrive while Core Audio is still constructing the tap. This
+    // also gates the realtime callback without taking a lock on that thread.
+    private let stopped = Atomic(false)
     private var listeners: [(AudioObjectID, AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
 
     init(
@@ -282,13 +300,15 @@ private final class Capture: @unchecked Sendable {
 
     func start() {
         queue.async { [self] in
+            guard !stopped.load(ordering: .acquiring) else { return }
             running = true
             open()
-            watch()
+            if !stopped.load(ordering: .acquiring) { watch() }
         }
     }
 
     func stop() {
+        stopped.store(true, ordering: .releasing)
         queue.async { [self] in
             running = false
             unwatch()
@@ -299,7 +319,7 @@ private final class Capture: @unchecked Sendable {
     // MARK: - The plumbing itself
 
     private func open() {
-        guard running else { return }
+        guard running, !stopped.load(ordering: .acquiring) else { return }
         // Ten seconds passed between this device reporting itself started and
         // its first buffer, measured on a live session. Which call spends
         // them decides whether it can be moved off the path the user waits on.
@@ -342,7 +362,8 @@ private final class Capture: @unchecked Sendable {
         // asserts that isolation on Core Audio's realtime thread — which
         // traps the process the moment audio starts flowing.
         let status = AudioDeviceCreateIOProcIDWithBlock(&proc, aggregate, nil) {
-            @Sendable _, input, _, _, _ in
+            @Sendable [self] _, input, _, _, _ in
+            guard !stopped.load(ordering: .acquiring) else { return }
             let incoming = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
             guard let first = incoming.first else { return }
 
@@ -377,6 +398,10 @@ private final class Capture: @unchecked Sendable {
         guard status == noErr, let proc else {
             return fail(.plumbing("create io proc \(SystemAudioTap.describe(status))"))
         }
+        guard !stopped.load(ordering: .acquiring) else {
+            close()
+            return
+        }
         let startStatus = AudioDeviceStart(aggregate, proc)
         guard startStatus == noErr else {
             return fail(.plumbing("start device \(SystemAudioTap.describe(startStatus))"))
@@ -409,8 +434,7 @@ private final class Capture: @unchecked Sendable {
                     reported = delivered
                     Log.write("tap: \(delivered) frames delivered")
                 }
-                do { try await Task.sleep(for: announced ? .seconds(1) : .milliseconds(100)) }
-                catch { return }
+                do { try await Task.sleep(for: announced ? .seconds(1) : .milliseconds(100)) } catch { return }
             }
         }
     }

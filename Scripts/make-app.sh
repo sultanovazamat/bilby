@@ -56,5 +56,6 @@ PLIST
 # attributes, and codesign refuses a bundle that contains any ("resource
 # fork, Finder information, or similar detritus not allowed").
 xattr -cr "$APP"
-codesign --force --sign - "$APP" >/dev/null 2>&1 || echo "warning: ad-hoc signing failed for $APP" >&2
+codesign --force --options runtime --sign - "$APP" >/dev/null
+"$ROOT/Scripts/check-app-security.sh" "$APP" >/dev/null
 echo "$APP"

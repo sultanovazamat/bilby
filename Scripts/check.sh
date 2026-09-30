@@ -21,5 +21,7 @@ echo "── app, and it runs without this checkout"
 # finds its resources, and it was proving it of a binary nobody ships. It is
 # also the faster of the two now — the release build above is already cached,
 # where debug would be a second full build.
-BILBY_CONFIG=release ./Scripts/make-app.sh >/dev/null
-./Scripts/check-app-portable.sh
+APP="${BILBY_APP_PATH:-$ROOT/.build/check/Bilby.app}"
+BILBY_CONFIG=release BILBY_APP_PATH="$APP" ./Scripts/make-app.sh >/dev/null
+./Scripts/check-app-security.sh "$APP"
+./Scripts/check-app-portable.sh "$APP"

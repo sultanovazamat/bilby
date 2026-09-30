@@ -10,7 +10,8 @@ struct StatusTextTests {
         #expect(StatusText.waiting(readiness: .idle, app: "Zoom") == "Loading speech recognition…")
         #expect(StatusText.waiting(readiness: .preparing(nil), app: "Zoom") == "Loading speech recognition…")
         #expect(StatusText.waiting(readiness: .preparing(0.4), app: "Zoom") == "Loading speech recognition, 40%")
-        #expect(StatusText.waiting(readiness: .downloading(0.427), app: "Zoom") == "Downloading speech recognition, 43%")
+        #expect(
+            StatusText.waiting(readiness: .downloading(0.427), app: "Zoom") == "Downloading speech recognition, 43%")
         #expect(StatusText.waiting(readiness: .ready, app: "Zoom") == "Listening to Zoom…")
         #expect(StatusText.waiting(readiness: .ready, app: nil) == "Listening…")
         #expect(StatusText.waiting(readiness: .failed("No network."), app: "Zoom") == "No network.")
@@ -36,6 +37,9 @@ struct StatusTextTests {
         #expect(
             StatusText.problem(.failed(.plumbing("start device -66680")), app: "Zoom")
                 == "Something went wrong. Start captions again.")
+        #expect(
+            StatusText.problem(.failed(.overloaded), app: "Zoom")
+                == "Captions couldn’t keep up and stopped. Choose an app to restart.")
     }
 
     @Test("only a refused tap is offered as something the user can fix")

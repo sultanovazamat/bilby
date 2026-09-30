@@ -78,9 +78,9 @@ jobs:
 
       # Written from inside .build so `shasum -c Bilby.dmg.sha256` works in a
       # downloads folder.
-      - name: Checksum
+      - name: Verify checksum
         working-directory: .build
-        run: shasum -a 256 Bilby.dmg | tee Bilby.dmg.sha256
+        run: shasum -a 256 -c Bilby.dmg.sha256
 
       - name: Draft the release
         env:

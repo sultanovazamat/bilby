@@ -52,8 +52,7 @@ if [ -n "$IDENTITY" ]; then
 else
     echo "no Developer ID given — ad-hoc signed: on macOS 15 and later the first open is blocked until the user allows it in System Settings → Privacy & Security"
 fi
-codesign --verify --strict "$APP"
-echo "signature verified"
+"$ROOT/Scripts/check-app-security.sh" "$APP"
 
 # The 1x and 2x drawings, side by side under the names dmgbuild pairs up.
 swift "$ROOT/Scripts/make-dmg-art.swift" \
@@ -75,4 +74,5 @@ elif [ -n "$IDENTITY" ]; then
 fi
 
 "$ROOT/Scripts/check-dmg.sh" "$DMG"
+(cd "$ROOT/.build" && shasum -a 256 Bilby.dmg > Bilby.dmg.sha256)
 echo "$DMG ($(du -h "$DMG" | cut -f1))"

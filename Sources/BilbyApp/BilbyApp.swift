@@ -65,7 +65,8 @@ struct BilbyApp: App {
                 ForEach(menu.installedLanguages) { language in
                     Toggle(
                         isOn: Binding(
-                            get: { menu.target == language.code }, set: { _ in delegate.translate(into: language.code) })
+                            get: { menu.target == language.code }, set: { _ in delegate.translate(into: language.code) }
+                        )
                     ) {
                         Text(language.name)
                     }
@@ -141,6 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Which start is current, so a stream that ends late cannot finish a
     /// session that replaced it.
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var sessionCancellation: SessionCancellation?
     /// The app being captioned, or the last one, for Start to go back to.
     private(set) var listening: AudioApp?
     /// The pipeline's last reported stage, refreshed when the menu opens
@@ -534,19 +536,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         listening = app
         Log.write("app: listening to \(app.name) — \(app.processes.count) audio processes")
-        let counter = diagnostics
-        let tap = SystemAudioTap(onFailure: { counter.failed($0) })
-        // Asked again whenever Core Audio's process list changes, so a new
-        // browser tab's audio helper is picked up without the recogniser
-        // noticing anything happened.
-        let id = app.id
-        start(
-            audio: {
-                tap.buffers(of: { SystemAudioTap.candidates().first { $0.id == id }?.processes ?? [] })
-            }, keepingHistory: keepingHistory)
+        start(app: app, keepingHistory: keepingHistory)
     }
 
     func stop(keepingHistory: Bool = false) {
+        sessionCancellation?.cancel()
         running?.cancel()
         running = nil
         finish(keepingHistory: keepingHistory)
@@ -555,6 +549,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The stream ended, by Stop or by itself. Either way the menu must not
     /// keep offering Stop for something that is no longer running.
     private func finish(keepingHistory: Bool = false) {
+        sessionCancellation?.cancel()
+        sessionCancellation = nil
         guard isListening else { return }
         isListening = false
         pipeline = diagnostics.state
@@ -562,10 +558,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         present()
     }
 
-    private func start(
-        audio: @escaping @Sendable () -> AsyncStream<AVAudioPCMBuffer>, keepingHistory: Bool
-    ) {
+    private func start(app: AudioApp, keepingHistory: Bool) {
         guard let chosenTarget = target else { return }
+        sessionCancellation?.cancel()
         running?.cancel()
         running = nil
         finish(keepingHistory: keepingHistory)
@@ -576,6 +571,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let counter = diagnostics
         generation += 1
         let mine = generation
+        let cancellation = SessionCancellation()
+        sessionCancellation = cancellation
         running = Task { [weak self] in
             guard let self else { return }
             refreshStatus()
@@ -598,10 +595,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // Counting frames is how the bar knows audio is arriving at all,
             // and when the first buffer landed.
-            let transcriber = UnifiedTranscriber(onAudio: { counter.audio($0) })
-            let utterances = transcriber.utterances(from: audio)
-            let session = CaptionSession(translator: AppleTranslator(), target: chosenTarget)
+            let failure: @Sendable (TapFailure) -> Void = { [weak self] failure in
+                Task { @MainActor in
+                    guard let self, self.generation == mine else { return }
+                    counter.failed(failure)
+                    if failure == .overloaded, self.isListening {
+                        self.stop(keepingHistory: true)
+                    } else {
+                        self.pipeline = counter.state
+                    }
+                }
+            }
+            let overflow: @Sendable () -> Void = { failure(.overloaded) }
+            let tap = SystemAudioTap(onFailure: failure)
+            let id = app.id
+            let transcriber = UnifiedTranscriber(
+                onAudio: { counter.audio($0) }, onOverflow: overflow, cancellation: cancellation)
+            let utterances = transcriber.utterances(from: {
+                // Follow helper processes as browser tabs and audio routes change.
+                tap.buffers(
+                    of: { SystemAudioTap.candidates().first { $0.id == id }?.processes ?? [] },
+                    cancellation: cancellation)
+            })
+            let session = CaptionSession(
+                translator: AppleTranslator(), target: chosenTarget,
+                onOverflow: overflow, cancellation: cancellation)
             for await event in session.events(from: utterances) {
+                guard !Task.isCancelled, generation == mine else { break }
                 switch event {
                 case .live:
                     diagnostics.heardSomething()
@@ -625,7 +645,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 model.apply(event)
                 if mode == .bar { panel?.fitContent() }
             }
-            if generation == mine { finish() }
+            // An unexpected end keeps the captions already delivered, even
+            // if its failure notification reaches the main actor afterward.
+            // Explicit Stop has already applied its own history policy.
+            if generation == mine { finish(keepingHistory: true) }
         }
     }
 }

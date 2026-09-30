@@ -18,21 +18,23 @@ public actor AppleTranslator: Translating {
     }
 
     public func translate(_ text: String, to language: Language) async throws -> String {
-        let session = sessions[language.code] ?? {
-            Log.write("translate: opening session \(source.languageCode?.identifier ?? "?") -> \(language.code)")
-            let new = TranslationSession(
-                installedSource: source,
-                target: Locale.Language(identifier: language.code)
-            )
-            sessions[language.code] = new
-            return new
-        }()
+        let session =
+            sessions[language.code]
+            ?? {
+                Log.write("translate: opening session \(source.languageCode?.identifier ?? "?") -> \(language.code)")
+                let new = TranslationSession(
+                    installedSource: source,
+                    target: Locale.Language(identifier: language.code)
+                )
+                sessions[language.code] = new
+                return new
+            }()
         do {
             return try await session.translate(text).targetText
         } catch {
             // CaptionSession swallows failures so one bad clause cannot stall
             // the rest. Without this line it would also be invisible.
-            Log.write("translate: FAILED — \(error)")
+            Log.failure("translate", error: error)
             sessions[language.code] = nil
             throw error
         }
