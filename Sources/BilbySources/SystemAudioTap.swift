@@ -148,7 +148,7 @@ public final class SystemAudioTap: @unchecked Sendable {
             // aggregate device with a UID that already exists, so a
             // fixed one left any second Bilby — an installed copy
             // beside a `swift run` build — failing forever.
-            kAudioAggregateDeviceUIDKey: "net.variant.bilby.aggregate.\(tapUUID.uuidString)",
+            kAudioAggregateDeviceUIDKey: "io.github.sultanovazamat.bilby.aggregate.\(tapUUID.uuidString)",
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
             kAudioAggregateDeviceTapAutoStartKey: true,
@@ -252,7 +252,7 @@ final class FrameCounter: Sendable {
 private final class Capture: @unchecked Sendable {
     /// Every Core Audio call and every listener callback happens here, so a
     /// rebuild can never race the teardown it follows.
-    private let queue = DispatchQueue(label: "net.variant.bilby.tap")
+    private let queue = DispatchQueue(label: "io.github.sultanovazamat.bilby.tap")
 
     private let processes: @Sendable () -> [AudioObjectID]
     private let onFailure: (@Sendable (TapFailure) -> Void)?

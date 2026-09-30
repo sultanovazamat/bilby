@@ -27,6 +27,9 @@ BUNDLE="$APP/Contents/Resources/Bilby_BilbyUI.bundle"
 for file in menu-bar.png menu-sources.png; do
     [ -f "$BUNDLE/$file" ] || { echo "✗ $BUNDLE/$file is missing"; exit 1; }
 done
+# Apache-2.0 obliges every copy of the binary to carry FluidAudio's licence.
+NOTICES="$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
+[ -f "$NOTICES" ] || { echo "✗ $NOTICES is missing"; exit 1; }
 
 # The app itself may live inside the checkout (release.sh stages it under
 # .build), so its own path is allowed back in; the last matching rule wins.

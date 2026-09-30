@@ -36,7 +36,7 @@ public enum Log {
             .path(percentEncoded: false)
     }
 
-    private static let queue = DispatchQueue(label: "net.variant.bilby.log")
+    private static let queue = DispatchQueue(label: "io.github.sultanovazamat.bilby.log")
     private static let started = Date()
 
     public static func start() {
