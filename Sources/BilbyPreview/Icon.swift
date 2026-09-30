@@ -26,9 +26,9 @@ enum Icon {
                 ]
             )?.draw(in: path, angle: -90)
 
-            // The mark sits slightly high: its mass is in the two solid lines
-            // under a ragged row of bars, and centring by bounding box reads
-            // as sagging.
+            // The mark sits slightly high: most of its ink is in its lower
+            // half, where the bars stand on their baseline over the lines, and
+            // centring by bounding box reads as sagging.
             let markSide = tile.width * 0.58
             let mark = CGRect(
                 x: tile.midX - markSide / 2,
