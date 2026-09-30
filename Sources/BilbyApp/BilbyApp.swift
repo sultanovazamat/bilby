@@ -131,6 +131,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @ObservationIgnored private var warming: Task<Readiness, Never>?
     @ObservationIgnored private var attemptedAt = ContinuousClock.now - .seconds(60)
+    /// When the model began loading onto the Neural Engine, which reports
+    /// nothing while it does: the estimate counts from here.
+    @ObservationIgnored private var loadStarted: ContinuousClock.Instant?
+    /// How long the last load took on this Mac, remembered between launches.
+    @ObservationIgnored private var loadEstimate = LoadEstimate(
+        expected: UserDefaults.standard.object(forKey: "speechModelLoadSeconds")
+            .flatMap { $0 as? Double }.map { .seconds($0) })
     /// Which start is current, so a stream that ends late cannot finish a
     /// session that replaced it.
     @ObservationIgnored private var generation = 0
@@ -341,7 +348,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // already been built, and the submenu shows nothing. It costs 155 ms,
         // measured, and never runs again unless something changes.
         refreshLanguages()
-        if !UserDefaults.standard.bool(forKey: "didSetUp") { showSetup() }
+        if !UserDefaults.standard.bool(forKey: "didSetUp") {
+            showSetup()
+        } else {
+            // Set up before, so the model is on this Mac: load it now, while
+            // nobody is waiting, instead of when someone opens the menu to
+            // use it. Costs ~20 s of background work and the 400 MB the model
+            // is kept in anyway; not done before setup, where the first run's
+            // 580 MB download is explained and started.
+            warm()
+        }
     }
 
     /// Loads the recogniser once. Listening awaits the same task, so pressing
@@ -360,21 +376,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return warming
         }
         attemptedAt = ContinuousClock.now
-        readiness = .preparing
+        readiness = .preparing(nil)
+        loadStarted = ContinuousClock.now
         let transcriber = UnifiedTranscriber()
         // The delegate lives as long as the app, so a strong capture is fine.
         let task = Task.detached { () -> Readiness in
             let final = await transcriber.warmUp { partial in
                 Task { @MainActor in
                     guard !self.readiness.isSettled, self.worthShowing(partial) else { return }
+                    if case .preparing = partial {
+                        // Loading already: the estimate owns the number.
+                        if case .preparing = self.readiness { return }
+                        // A download just finished, and the load starts now.
+                        self.loadStarted = ContinuousClock.now
+                    }
                     self.readiness = partial
                 }
             }
-            await MainActor.run { self.readiness = final }
+            await MainActor.run {
+                if final == .ready, let started = self.loadStarted {
+                    self.learnLoad(ContinuousClock.now - started)
+                }
+                self.readiness = final
+            }
             return final
         }
         warming = task
+        // Nothing reports while the model loads, so the estimate moves on its
+        // own, in the 5% steps it gives, until the load is over.
+        Task { @MainActor in
+            while !self.readiness.isSettled {
+                if case .preparing = self.readiness, let started = self.loadStarted,
+                    let fraction = self.loadEstimate.fraction(after: ContinuousClock.now - started)
+                {
+                    let next = Readiness.preparing(fraction)
+                    if next != self.readiness { self.readiness = next }
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
         return task
+    }
+
+    /// This load is the estimate for the next, including after a relaunch.
+    private func learnLoad(_ took: Duration) {
+        loadEstimate.learn(took)
+        let seconds = Double(took.components.seconds) + Double(took.components.attoseconds) / 1e18
+        UserDefaults.standard.set(seconds, forKey: "speechModelLoadSeconds")
     }
 
     /// A download reports progress far more often than a person can read it,
@@ -386,9 +434,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return Int(now * 100) != Int(shown * 100)
     }
 
-    /// Opening the menu means the user is about to act, which is the moment
-    /// worth spending on. Warming up at launch cost 14 seconds of CPU and
-    /// 400 MB every login, before anyone had asked for anything.
+    /// Opening the menu means the user is about to act. Once Bilby has been
+    /// set up it has already started loading at launch, and this finds the
+    /// work done; before that, this is where the first load begins.
     func menuOpened() {
         refreshSources()
         refreshLanguages()

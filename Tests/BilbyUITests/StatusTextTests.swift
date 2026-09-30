@@ -7,8 +7,9 @@ import Testing
 struct StatusTextTests {
     @Test("waiting text names the phase in plain words")
     func waiting() {
-        #expect(StatusText.waiting(readiness: .idle, app: "Zoom") == "Getting ready…")
-        #expect(StatusText.waiting(readiness: .preparing, app: "Zoom") == "Getting ready…")
+        #expect(StatusText.waiting(readiness: .idle, app: "Zoom") == "Loading speech recognition…")
+        #expect(StatusText.waiting(readiness: .preparing(nil), app: "Zoom") == "Loading speech recognition…")
+        #expect(StatusText.waiting(readiness: .preparing(0.4), app: "Zoom") == "Loading speech recognition, 40%")
         #expect(StatusText.waiting(readiness: .downloading(0.427), app: "Zoom") == "Downloading speech recognition, 43%")
         #expect(StatusText.waiting(readiness: .ready, app: "Zoom") == "Listening to Zoom…")
         #expect(StatusText.waiting(readiness: .ready, app: nil) == "Listening…")

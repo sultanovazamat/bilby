@@ -176,21 +176,21 @@ struct SetupModelTests {
             loadLanguages: { [.init(code: "fr", name: "French", isInstalled: true)] },
             warmUp: {
                 warmUps += 1
-                return .preparing
+                return .preparing(nil)
             }
         )
         model.advance()
         await model.requestAudioAccess()
         model.advance()
         #expect(warmUps == 1)
-        #expect(model.readiness == .preparing)
+        #expect(model.readiness == .preparing(nil))
         model.advance()
         #expect(warmUps == 1)
         model.update(readiness: .failed("No network."))
         #expect(model.readiness == .failed("No network."))
         model.retryWarmUp()
         #expect(warmUps == 2)
-        #expect(model.readiness == .preparing)
+        #expect(model.readiness == .preparing(nil))
         model.stopWatching()
     }
 

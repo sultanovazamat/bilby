@@ -7,7 +7,11 @@ public enum StatusText {
     /// Before the first words arrive, in the bar and on the last setup page.
     public static func waiting(readiness: Readiness, app: String?) -> String {
         switch readiness {
-        case .idle, .preparing: return "Getting ready…"
+        // The model is already on this Mac here, being loaded, not fetched:
+        // "Getting ready…" said nothing about what the wait was, or how long.
+        case .idle, .preparing(nil): return "Loading speech recognition…"
+        case .preparing(let fraction?):
+            return "Loading speech recognition, \(Int((fraction * 100).rounded()))%"
         case .downloading(let fraction):
             return "Downloading speech recognition, \(Int((fraction * 100).rounded()))%"
         case .failed(let message): return message

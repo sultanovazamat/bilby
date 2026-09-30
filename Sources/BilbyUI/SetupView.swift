@@ -166,6 +166,12 @@ public struct SetupView: View {
                     Text("About 600 MB, once. Bilby works offline after this.")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
+                } else if case .preparing = model.readiness {
+                    // Said outright: someone who watched the download could
+                    // take this wait for another one.
+                    Text("Already on this Mac. Bilby loads it once each time it starts.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
                 } else {
                     Text("Try a browser video with speech. Keep its sound on.")
                         .font(.system(size: 13))

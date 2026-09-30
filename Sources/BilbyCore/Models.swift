@@ -68,8 +68,10 @@ public enum Readiness: Equatable, Sendable {
     case idle
     /// Fetching the model, 0…1. Happens once per machine.
     case downloading(Double)
-    /// Compiling for this machine. Nothing to report until it is done.
-    case preparing
+    /// Loading the model onto this Mac's Neural Engine, which reports
+    /// nothing while it happens. The fraction is an estimate from the last
+    /// load on this Mac, or nil when there has not been one.
+    case preparing(Double?)
     case ready
     /// One sentence a person can act on. The full error is in the log.
     case failed(String)

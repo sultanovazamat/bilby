@@ -54,7 +54,7 @@ public struct UnifiedTranscriber: AudioTranscribing {
     public func warmUp(progress: @escaping @Sendable (Readiness) -> Void) async -> Readiness {
         let started = ContinuousClock.now
         Log.write("asr: warming up…")
-        progress(.preparing)
+        progress(.preparing(nil))
         do {
             try await Self.resident.warm(loading: {
                 let manager = StreamingUnifiedAsrManager(config: Self.config)
@@ -64,7 +64,7 @@ public struct UnifiedTranscriber: AudioTranscribing {
                         // Below 1 the files are still arriving. At 1 CoreML
                         // compiles for this machine, which reports nothing
                         // until it is done.
-                        progress(update.fractionCompleted < 1 ? .downloading(update.fractionCompleted) : .preparing)
+                        progress(update.fractionCompleted < 1 ? .downloading(update.fractionCompleted) : .preparing(nil))
                     })
                 return manager
             })

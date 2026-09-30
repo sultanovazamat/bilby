@@ -70,6 +70,8 @@ struct Preview {
             try snap(model, "tryIt")
             model.update(readiness: .downloading(0.43))
             try snap(model, "tryIt-downloading")
+            model.update(readiness: .preparing(0.4))
+            try snap(model, "tryIt-loading")
             model.update(
                 readiness: .failed("Speech recognition needs a one-time download. Connect to the internet and try again."))
             try snap(model, "tryIt-failed")
