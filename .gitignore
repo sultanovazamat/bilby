@@ -3,5 +3,5 @@
 DerivedData/
 *.xcuserstate
 .DS_Store
-Assets/
+/Assets/
 Bilby.iconset/

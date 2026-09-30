@@ -1,0 +1,19 @@
+name: An idea
+description: Something Bilby could do, or do better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What gets in your way
+      description: The situation, not the solution — the meeting, the video, the moment it happened.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+  - type: textarea
+    id: meanwhile
+    attributes:
+      label: What you do about it today

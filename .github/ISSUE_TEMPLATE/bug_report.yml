@@ -1,0 +1,55 @@
+name: Something is wrong
+description: Captions, translation, setup, or the app itself misbehaving.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what Bilby did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      placeholder: |
+        1. Listen to Google Chrome, playing a Meet call
+        2. Translate to Spanish
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: The app Bilby was listening to
+      placeholder: Zoom, Google Chrome (Meet), Microsoft Teams, Safari…
+  - type: input
+    id: languages
+    attributes:
+      label: Translating into
+      placeholder: Spanish
+  - type: input
+    id: version
+    attributes:
+      label: Bilby version
+      description: In Finder, select Bilby in Applications and choose File → Get Info.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: macOS 26.1, MacBook Air M2
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: The end of the log
+      description: >-
+        The last lines of ~/Library/Logs/Bilby/bilby.log. It never contains
+        anything that was said, but it does name the apps you have used and
+        paths on your Mac — remove anything you would rather not share.
+      render: text
