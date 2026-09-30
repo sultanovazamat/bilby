@@ -1,6 +1,6 @@
 # First run, menu, and the history panel — design
 
-Date: 2026-09-20. Follows the UX review of the app at commit 2302f23.
+Date: 2026-09-20. Follows the UX review of the app at commit 6a43882.
 
 ## Problem
 

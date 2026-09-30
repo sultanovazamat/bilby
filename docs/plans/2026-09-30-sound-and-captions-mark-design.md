@@ -1,6 +1,6 @@
 # A mark that shows what Bilby does — design
 
-Date: 2026-09-30. Written against commit 60e1808 on `first-run-and-history-panel`.
+Date: 2026-09-30. Written against commit 4d6cbe4 on `first-run-and-history-panel`.
 
 ## Problem
 
@@ -89,8 +89,8 @@ old glyph was erased from each screenshot, filled from the pixels on either
 side, and `BilbyMark` itself was drawn in its place. That drawing used the
 built module, at the old glyph's size and ink colour, in the screenshot's own
 colour space. `menu-sources.png` is still out of date in another way: it
-shows a "Setup…" item removed in 2cb06dd, and none of the item icons added in
-e9659f6. A fresh capture of the open menu would fix both.
+shows a "Setup…" item removed in 4de19a8, and none of the item icons added in
+3b6b460. A fresh capture of the open menu would fix both.
 
 ## Testing
 
