@@ -6,6 +6,7 @@ import SwiftUI
 
 /// `swift run BilbyPreview` checks the mark at actual menu-bar sizes.
 /// Add `--output <directory>` for light/dark PNGs and every onboarding scene.
+/// Add `--repo-assets` to export just the README and social-preview images.
 @main
 struct Preview {
     @MainActor
@@ -26,6 +27,11 @@ struct Preview {
         let directory = URL(fileURLWithPath: CommandLine.arguments[flag + 1], isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         _ = NSApplication.shared
+        if CommandLine.arguments.contains("--repo-assets") {
+            try RepositoryImages.write(to: directory)
+            print("Wrote repository images to \(directory.path)")
+            return
+        }
         try save(MarkSheet(), to: directory.appendingPathComponent("bilby-mark.png"))
         for scheme in [ColorScheme.light, .dark] {
             let appearance = scheme == .light ? "light" : "dark"
@@ -39,10 +45,10 @@ struct Preview {
                 checkAudio: { .granted }, openSettings: {}, startListening: {},
                 loadLanguages: {
                     [
-                        .init(code: "ru", name: "Russian", isInstalled: false),
+                        .init(code: "es", name: "Spanish", isInstalled: false),
                         .init(code: "fr", name: "French", isInstalled: true),
                     ]
-                }
+                }, selectedLanguageCode: "es"
             )
             try snap(model, "welcome")
             model.advance()
@@ -73,39 +79,18 @@ struct Preview {
             model.update(readiness: .preparing(0.4))
             try snap(model, "tryIt-loading")
             model.update(
-                readiness: .failed("Speech recognition needs a one-time download. Connect to the internet and try again."))
+                readiness: .failed(
+                    "Speech recognition needs a one-time download. Connect to the internet and try again."))
             try snap(model, "tryIt-failed")
             model.update(readiness: .ready)
-            model.show(
-                "Let’s make sure everyone can follow the conversation.",
-                "Давайте убедимся, что все могут следить за разговором.")
+            model.show(PreviewCaptions.source, PreviewCaptions.translation)
             try snap(model, "caption")
             model.stopWatching()
         }
         // The history panel's content, with a session's worth of sentences.
         for scheme in [ColorScheme.light, .dark] {
             let appearance = scheme == .light ? "light" : "dark"
-            let model = CaptionModel()
-            var engine = CaptionEngine()
-            let script = [
-                (
-                    "So let's circle back on the runway before we commit to Q3.",
-                    "Итак, давайте вернёмся к запасу денег, прежде чем брать обязательства по третьему кварталу."
-                ),
-                (
-                    "Burn is up eighteen percent quarter over quarter.",
-                    "Расходы выросли на восемнадцать процентов по сравнению с прошлым кварталом."
-                ),
-                ("Two senior hires are pending offer.", "Два старших специалиста ждут оффера."),
-            ]
-            for (source, translation) in script {
-                for event in engine.consume(Utterance(source, isFinal: true)) { model.apply(event) }
-                if let line = model.latest {
-                    for event in engine.resolve(line.id, translation: translation) { model.apply(event) }
-                }
-            }
-            model.apply(.live("And the bridge round term sheet"))
-            model.apply(.draft("И условия промежуточного раунда"))
+            let model = PreviewCaptions.history()
             let view = HistoryView(model: model, perform: { _ in })
                 .frame(width: 380, height: 520)
                 .environment(\.colorScheme, scheme)
@@ -147,7 +132,7 @@ struct Preview {
     }
 
     @MainActor
-    private static func save(_ view: some View, to url: URL) throws {
+    static func save(_ view: some View, to url: URL) throws {
         // ImageRenderer omits AppKit-backed controls such as the language
         // picker. Capture the actual hosting view, including those controls.
         let host = NSHostingView(rootView: view)

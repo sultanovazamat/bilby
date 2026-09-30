@@ -23,7 +23,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.png">
-  <img alt="Bilby's caption bar: an English sentence, dimmed, above its Russian translation" src="docs/assets/hero-light.png">
+  <img alt="Bilby's caption bar: an English sentence, dimmed, above its Spanish translation" src="docs/assets/hero-light.png">
 </picture>
 
 ## Why it exists
@@ -51,7 +51,7 @@ bar for those — and for a video, a podcast, or anything else your Mac plays.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/history-dark.png">
-    <img alt="The session column: each English sentence, dimmed, above its Russian translation, with the sentence being spoken at the bottom" src="docs/assets/history-light.png" width="380">
+    <img alt="The session column: each English sentence, dimmed, above its Spanish translation, with the sentence being spoken at the bottom" src="docs/assets/history-light.png" width="380">
   </picture>
 </p>
 
@@ -133,6 +133,7 @@ With Xcode 26 on an Apple silicon Mac:
 ./Scripts/make-app.sh           # ~/Applications/Bilby.app, debug
 ./Scripts/release.sh            # .build/Bilby.dmg: release build, checked, ad-hoc signed
 swift run BilbyPreview --output .build/previews   # every setup scene, both appearances
+swift run BilbyPreview --repo-assets --output docs/assets   # README images and social preview
 ```
 
 `check.sh` builds in release on purpose: strict concurrency finds races under
